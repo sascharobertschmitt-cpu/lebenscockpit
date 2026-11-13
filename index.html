@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#14202e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cockpit">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Lebenscockpit</title>
+</head>
+<body>
+<div id="app"><p class="boot">Lädt…</p></div>
+<div id="modal"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+  (function () {
+    var v = '2.109.0';
+    var urls = [
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@' + v + '/dist/umd/supabase.js',
+      'https://unpkg.com/@supabase/supabase-js@' + v + '/dist/umd/supabase.js'
+    ];
+    function load(i) {
+      if (window.supabase && window.supabase.createClient) return start();
+      if (i >= urls.length) { document.getElementById('app').innerHTML = '<p class="boot">Die Bibliothek konnte nicht geladen werden. Prüfe die Internetverbindung und lade die Seite neu.</p>'; return; }
+      var s = document.createElement('script');
+      s.src = urls[i];
+      s.onload = function () { load(i + 1); };
+      s.onerror = function () { load(i + 1); };
+      document.head.appendChild(s);
+    }
+    function start() {
+      var a = document.createElement('script');
+      a.src = 'logic.js';
+      a.onload = function () {
+        var b = document.createElement('script');
+        b.src = 'app.js';
+        document.body.appendChild(b);
+      };
+      document.body.appendChild(a);
+    }
+    load(0);
+  })();
+</script>
+</body>
+</html>
