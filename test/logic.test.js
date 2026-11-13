@@ -102,3 +102,12 @@ assert.strictEqual(L.iso(L.nextRecurrence('2026-01-31', 'monatlich', D('2026-01-
 assert.strictEqual(L.iso(L.nextRecurrence(null, 'taeglich', today)), '2026-11-14');
 
 console.log('Alle Tests bestanden');
+
+// Dispo als Spielraum: Stand -7623,29, Dispo 8000, offen 559,50 -> es fehlen 182,79
+{
+  const sD = JSON.parse(JSON.stringify(s));
+  sD.staende = [{ betrag: -7623.29, erfasst_am: sD.staende && sD.staende[0] ? sD.staende[0].erfasst_am : new Date().toISOString() }];
+  const lD = L.calcLage(sD, today, 8000);
+  assert.strictEqual(lD.spielraum, 376.71);
+  console.log('Dispo-Spielraum:', lD.spielraum, 'verfuegbar:', lD.verfuegbar, 'luecke:', lD.luecke);
+}

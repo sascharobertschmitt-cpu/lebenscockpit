@@ -125,11 +125,12 @@
   }
 
   // ---------- Die Lage: Wie viel ist bis zum nächsten Gehalt frei? ----------
-  function calcLage(state, today) {
+  function calcLage(state, today, dispo) {
+    dispo = Number(dispo) || 0;
     const cs = periodStart(today);
     const stand = state.staende && state.staende.length ? state.staende[0] : null;
     const next = nextIncome(state, today);
-    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0 };
+    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null };
     if (!next) return res;
     res.days = Math.max(1, daysBetween(today, next.date));
 
@@ -155,7 +156,8 @@
         }
       }
       res.nachStand = round2(res.nachStand);
-      res.verfuegbar = round2(num(stand.betrag) - res.offen - res.nachStand);
+      res.spielraum = round2(num(stand.betrag) + dispo);
+      res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand);
       if (res.verfuegbar < 0) res.luecke = round2(-res.verfuegbar);
       else res.tagesbudget = round2(res.verfuegbar / res.days);
     }

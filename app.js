@@ -142,7 +142,7 @@
 
   function viewHeute() {
     var t = todayD();
-    var lage = L.calcLage(S, t);
+    var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
     if (!lage.next) {
@@ -153,10 +153,10 @@
       var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
       if (lage.luecke != null) {
         h += '<div class="hero bad"><div class="lbl">Bis ' + esc(who) + ' fehlen</div><div class="big">' + eur0(lage.luecke) + '</div>' +
-          '<div class="sm">Kontostand ' + eur(Number(lage.stand.betrag)) + ' minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen. Das Geld muss noch beschafft werden.</div></div>';
+          '<div class="sm">Auch mit vollem Dispo reicht es nicht: ' + eur(lage.spielraum) + ' Spielraum (Kontostand plus Dispo) minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen. Dieses Geld muss noch beschafft werden.</div></div>';
       } else {
         h += '<div class="hero"><div class="lbl">Frei verfügbar pro Tag</div><div class="big">' + eur0(lage.tagesbudget) + '</div>' +
-          '<div class="sm">' + eur0(lage.verfuegbar) + ' insgesamt, ' + lage.days + (lage.days === 1 ? ' Tag' : ' Tage') + ' bis ' + esc(who) + '</div></div>';
+          '<div class="sm">' + eur0(lage.verfuegbar) + ' Spielraum nach offenen Zahlungen (inkl. Dispo), ' + lage.days + (lage.days === 1 ? ' Tag' : ' Tage') + ' bis ' + esc(who) + '</div></div>';
       }
     }
 
@@ -166,7 +166,7 @@
       h += '<div class="grid2"><div class="stat"><div class="k">Kontostand</div><div class="v">' + eur(Number(lage.stand.betrag)) + '</div><div class="n">Stand ' + ageTxt + '</div></div>' +
         '<div class="stat"><div class="k">Offen bis Gehalt</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div></div>';
       if (Number(lage.stand.betrag) < 0) {
-        h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + '.</div>';
+        h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
       }
       if (age >= 7) h += '<div class="warn">Der Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
