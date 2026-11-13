@@ -151,12 +151,24 @@
       h += '<div class="hero neutral"><div class="lbl">Noch kein Kontostand</div><div class="big">?</div><div class="sm">Trag deinen aktuellen Kontostand ein, dann rechnet die App.</div></div>';
     } else {
       var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
+      var l = lage.luna ? Number(lage.luna.betrag) : null;
       if (lage.luecke != null) {
-        h += '<div class="hero bad"><div class="lbl">Bis ' + esc(who) + ' fehlen</div><div class="big">' + eur0(lage.luecke) + '</div>' +
-          '<div class="sm">Auch mit vollem Dispo reicht es nicht: ' + eur(lage.spielraum) + ' Spielraum (Kontostand plus Dispo) minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen. Dieses Geld muss noch beschafft werden.</div></div>';
+        var sub = 'Kontostand ' + eur(Number(lage.stand.betrag)) + ' plus Dispo ' + eur0(DISPO) + ' minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen.';
+        h += '<div class="hero bad"><div class="lbl">Auf Saschas Konto fehlen bis ' + esc(fmtD(lage.next.date)) + '</div><div class="big">' + eur0(lage.luecke) + '</div><div class="sm">' + sub + '</div></div>';
       } else {
         h += '<div class="hero"><div class="lbl">Frei verfügbar pro Tag</div><div class="big">' + eur0(lage.tagesbudget) + '</div>' +
           '<div class="sm">' + eur0(lage.verfuegbar) + ' Spielraum nach offenen Zahlungen (inkl. Dispo), ' + lage.days + (lage.days === 1 ? ' Tag' : ' Tage') + ' bis ' + esc(who) + '</div></div>';
+      }
+      if (lage.luna) {
+        if (lage.gesamt < 0) {
+          h += '<div class="warn">Mit Lunas Konto (' + eur(l) + ') gegengerechnet fehlen zusammen noch <b>' + eur(-lage.gesamt) + '</b>.</div>';
+        } else if (lage.luecke != null) {
+          h += '<div class="card">Lunas Konto (' + eur(l) + ') deckt die Lücke. Danach bleiben zusammen ' + eur(lage.gesamt) + '.</div>';
+        } else {
+          h += '<div class="card">Zusammen mit Lunas Konto (' + eur(l) + ') bleiben ' + eur(lage.gesamt) + '.</div>';
+        }
+      } else {
+        h += '<div class="warn">Lunas Kontostand fehlt noch. Trag ihn über "Kontostand aktualisieren" ein.</div>';
       }
     }
 
@@ -279,11 +291,13 @@
     var rows = past.map(function (i) { return abRow(i, true); }).join('') + undated.map(function (i) { return abRow(i, false); }).join('');
     var last = S.staende[0];
     openModal('<h1>Kontostand aktualisieren</h1><form data-form="abgleich">' +
+      '<label for="ab-konto">Welches Konto?</label><select id="ab-konto"><option value="sascha">Saschas Konto</option><option value="luna">Lunas Konto</option></select>' +
       '<label for="ab-betrag">Aktueller Kontostand in Euro</label><input id="ab-betrag" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 1840,50" required>' +
       '<label class="inline"><input type="checkbox" id="ab-minus"> Das Konto ist im Minus (Dispo)</label>' +
-      '<h2>Was ist seit dem letzten Stand abgebucht?</h2><p class="note">Ein Haken bedeutet: Der Betrag ist schon vom Konto weg und steckt im Kontostand. Ohne Haken bleibt die Zahlung offen und wird noch abgezogen.</p>' +
-      '<div class="card">' + (rows || '<div class="empty">Nichts zu bestätigen.</div>') + '</div>' +
+      '<div id="ab-posten"><h2>Was ist seit dem letzten Stand abgebucht?</h2><p class="note">Ein Haken bedeutet: Der Betrag ist schon vom Konto weg und steckt im Kontostand. Ohne Haken bleibt die Zahlung offen und wird noch abgezogen.</p>' +
+      '<div class="card">' + (rows || '<div class="empty">Nichts zu bestätigen.</div>') + '</div></div>' +
       '<div class="err" id="ab-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
+    document.getElementById('ab-konto').addEventListener('change', function (e) { document.getElementById('ab-posten').style.display = e.target.value === 'luna' ? 'none' : ''; });
     setTimeout(function () { var el = document.getElementById('ab-betrag'); if (el) el.focus(); }, 50);
   }
   function abRow(i, checked) {
@@ -298,9 +312,10 @@
     if (form.querySelector('#ab-minus').checked) n = -Math.abs(n);
     var ts = new Date().toISOString();
     var t = todayD(), cs = L.periodStart(t);
-    var r = await sb.from('kontostaende').insert({ betrag: n, erfasst_am: ts, erfasst_von: S.user.email });
+    var konto = form.querySelector('#ab-konto').value;
+    var r = await sb.from('kontostaende').insert({ betrag: n, erfasst_am: ts, erfasst_von: S.user.email, konto: konto });
     if (r.error) throw r.error;
-    var ids = Array.prototype.map.call(form.querySelectorAll('input[name=pay]:checked'), function (x) { return x.value; });
+    var ids = konto === 'luna' ? [] : Array.prototype.map.call(form.querySelectorAll('input[name=pay]:checked'), function (x) { return x.value; });
     if (ids.length) {
       var rows = ids.map(function (id) {
         var p = S.posten.find(function (x) { return x.id === id; });

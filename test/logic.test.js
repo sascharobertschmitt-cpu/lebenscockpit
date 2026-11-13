@@ -111,3 +111,14 @@ console.log('Alle Tests bestanden');
   assert.strictEqual(lD.spielraum, 376.71);
   console.log('Dispo-Spielraum:', lD.spielraum, 'verfuegbar:', lD.verfuegbar, 'luecke:', lD.luecke);
 }
+
+// Luna-Konto gegenrechnen
+{
+  const sL = JSON.parse(JSON.stringify(s));
+  const ts = sL.staende && sL.staende[0] ? sL.staende[0].erfasst_am : new Date().toISOString();
+  sL.staende = [{ betrag: -7623.29, erfasst_am: ts, konto: 'sascha' }, { betrag: 300, erfasst_am: ts, konto: 'luna' }];
+  const lL = L.calcLage(sL, today, 8000);
+  assert.strictEqual(lL.luna.betrag, 300);
+  assert.strictEqual(lL.gesamt, Math.round((lL.verfuegbar + 300) * 100) / 100);
+  console.log('Luna-Gegenrechnung ok');
+}
