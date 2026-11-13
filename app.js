@@ -297,7 +297,8 @@
       '<div id="ab-posten"><h2>Was ist seit dem letzten Stand abgebucht?</h2><p class="note">Ein Haken bedeutet: Der Betrag ist schon vom Konto weg und steckt im Kontostand. Ohne Haken bleibt die Zahlung offen und wird noch abgezogen.</p>' +
       '<div class="card">' + (rows || '<div class="empty">Nichts zu bestätigen.</div>') + '</div></div>' +
       '<div class="err" id="ab-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
-    document.getElementById('ab-konto').addEventListener('change', function (e) { document.getElementById('ab-posten').style.display = e.target.value === 'luna' ? 'none' : ''; });
+    var kSel = document.getElementById('ab-konto');
+    if (kSel && kSel.addEventListener) kSel.addEventListener('change', function (e) { document.getElementById('ab-posten').style.display = e.target.value === 'luna' ? 'none' : ''; });
     setTimeout(function () { var el = document.getElementById('ab-betrag'); if (el) el.focus(); }, 50);
   }
   function abRow(i, checked) {
