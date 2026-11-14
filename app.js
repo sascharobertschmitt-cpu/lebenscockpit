@@ -477,7 +477,9 @@
   async function downloadBeleg(path) {
     var r = await sb.storage.from('belege').createSignedUrl(path, 60);
     if (r.error) throw r.error;
-    window.open(r.data.signedUrl, '_blank', 'noopener,noreferrer');
+    var a = document.createElement('a');
+    a.href = r.data.signedUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    document.body.appendChild(a); a.click(); a.remove();
   }
 
   // ---------- Aktionen ----------
