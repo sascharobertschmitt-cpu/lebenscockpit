@@ -23,10 +23,10 @@ for (const [date, expected] of [
   ['2028-02-29', '2028-02-25']
 ]) assert.equal(I(L.periodStart(D(date))), expected);
 
-// Monatsende: der 31. wird im Februar auf den letzten Tag begrenzt.
+// Bei Tag 31 liegt die Fälligkeit im Startmonat des Finanzmonats (ab Tag 25).
 let s = state([p('end')]);
 let items = L.itemsForPeriod(s, D('2026-02-25'), D('2026-03-01'));
-assert.equal(I(items[0].date), '2026-03-31');
+assert.equal(I(items[0].date), '2026-02-28');
 items = L.itemsForPeriod(s, D('2026-01-25'), D('2026-02-01'));
 assert.equal(I(items[0].date), '2026-01-31');
 
