@@ -275,7 +275,7 @@
     return head('Mehr', 'Version ' + VERSION) +
       '<div class="card"><div class="row"><div class="main"><div class="t">Angemeldet als</div><div class="s">' + esc(S.user.email) + '</div></div></div></div>' +
       '<button data-action="refresh">Daten neu laden</button><div style="height:10px"></div>' +
-      '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
+      '<button data-action="backup">Finanzdaten als JSON exportieren</button><p class="note">Dieser Export enthält die fünf App-Datentabellen im Klartext. Er ist kein vollständiges Systembackup: Anmeldung, Berechtigungen und Datenbankschema fehlen. Bewahre die Datei sicher auf.</p>' +
       '<button class="danger" data-action="logout">Abmelden</button>';
   }
 
