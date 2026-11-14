@@ -17,7 +17,8 @@ test('receipt backup verifier accepts valid bytes and rejects tampering', async 
       bucket: 'belege', files: [{ name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }]
     }));
     const run = () => spawnSync(process.execPath, ['scripts/verify-belege-export.mjs', dir], { encoding: 'utf8' });
-    assert.equal(run().status, 0);
+    const initial = run();
+    assert.equal(initial.status, 0, initial.stderr || initial.stdout);
     await writeFile(join(dir, 'files', name), Buffer.from('tampered'));
     assert.notEqual(run().status, 0);
   } finally { await rm(dir, { recursive: true, force: true }); }
