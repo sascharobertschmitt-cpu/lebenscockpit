@@ -54,6 +54,6 @@ jobs:
           test -s "$tmpdir/backup.dump"
           age -r "$AGE_RECIPIENT" -o "$tmpdir/$filename" "$tmpdir/backup.dump"
           test -s "$tmpdir/$filename"
-          rclone copyto "$tmpdir/$filename" "drive:{${DRIVE_FOLDER_ID}}/$filename" --checkers 2 --transfers 1
-          rclone lsf "drive:{${DRIVE_FOLDER_ID}}" | grep -Fx "$filename"
+          rclone copyto "$tmpdir/$filename" "drive:$filename" --drive-root-folder-id "$DRIVE_FOLDER_ID" --checkers 2 --transfers 1
+          rclone lsf "drive:" --drive-root-folder-id "$DRIVE_FOLDER_ID" | grep -Fx "$filename"
           echo "Encrypted backup uploaded and filename verified."
