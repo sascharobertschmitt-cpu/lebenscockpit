@@ -167,6 +167,7 @@
     var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
+    h += '<details class="dash-fold" open><summary>Finanzlage bis zum Gehalt</summary><div class="dash-fold-body">';
     if (!lage.next) {
       h += '<div class="card">Es ist kein Gehalt eingetragen.</div>';
     } else if (!lage.stand) {
@@ -194,6 +195,8 @@
       }
     }
 
+    h += '</div></details>';
+    h += '<details class="dash-fold"><summary>Kontostände und Hinweise</summary><div class="dash-fold-body">';
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
       var ageTxt = age <= 0 ? 'heute' : age === 1 ? 'gestern' : 'vor ' + age + ' Tagen';
@@ -206,23 +209,26 @@
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
       if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
+    h += '</div></details>';
+    h += '<details class="dash-fold"><summary>Restbudget im Detail</summary><div class="dash-fold-body">';
     h += restbudget(lage);
+    h += '</div></details>';
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
     var open = S.aufgaben.filter(function (a) { return !a.erledigt && a.faellig && L.parseISO(a.faellig) <= t; });
-    h += '<h2>Aufgaben heute und überfällig</h2><div class="card">' +
-      (open.length ? open.slice(0, 6).map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div>';
+    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + open.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+      (open.length ? open.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
 
-    var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; }).slice(0, 6);
-    h += '<h2>Bald fällig</h2><div class="card">' + (soon.length ? soon.map(function (it) {
+    var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
+    h += '<details class="dash-fold"><summary>Bald fällige Zahlungen (' + soon.length + ')</summary><div class="dash-fold-body"><div class="card">' + (soon.length ? soon.map(function (it) {
       return '<div class="row"><div class="main"><div class="t">' + esc(it.p.name) + '</div><div class="s">' + esc(fmtD(it.date)) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
-    }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div>';
+    }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
 
     var klaeren = S.posten.filter(function (p) { return p.status === 'pruefen'; });
     if (klaeren.length) {
-      h += '<h2>Noch zu klären</h2><div class="card">' + klaeren.map(function (p) {
+      h += '<details class="dash-fold"><summary>Noch zu klären (' + klaeren.length + ')</summary><div class="dash-fold-body"><div class="card">' + klaeren.map(function (p) {
         return '<div class="row"><div class="main" data-action="posten-edit" data-id="' + esc(p.id) + '"><div class="t">' + esc(p.name) + '</div><div class="s">' + esc(p.notiz || 'Betrag oder Termin prüfen') + '</div></div><div class="amt">' + eur(Number(p.betrag)) + '</div></div>';
-      }).join('') + '</div>';
+      }).join('') + '</div></div></details>';
     }
     return h;
   }
