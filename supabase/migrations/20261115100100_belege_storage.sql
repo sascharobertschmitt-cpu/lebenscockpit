@@ -6,6 +6,16 @@
 -- * privat (kein oeffentlicher Link), Anzeige nur ueber kurzlebige signierte URLs
 -- * nur JPEG (die App kodiert Fotos vor dem Hochladen selbst neu), maximal 3 MB je Datei
 -- * Zugriff nur fuer Mitglieder; Dateiname muss <uuid>.jpg sein; kein UPDATE (Belege sind unveraenderlich)
+-- Vor jeder Aenderung abbrechen, falls die ausfuehrende Rolle keine Policies auf storage.objects verwalten darf.
+-- Ohne diese Schranke koennte der Bucket bereits angelegt werden, bevor CREATE POLICY scheitert.
+DO $preflight$
+BEGIN
+  IF NOT pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid = 'storage.objects'::regclass), 'MEMBER') THEN
+    RAISE EXCEPTION 'Storage-Migration abgebrochen: Rolle % ist kein Mitglied des storage.objects-Eigentuemers. Policies separat mit berechtigter Rolle einrichten.', current_user;
+  END IF;
+END
+$preflight$;
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('belege', 'belege', false, 3145728, ARRAY['image/jpeg'])
 ON CONFLICT (id) DO UPDATE
