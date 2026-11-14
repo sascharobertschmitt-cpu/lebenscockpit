@@ -20,5 +20,16 @@ SELECT name, ok FROM (VALUES
   ('S2 genau drei Policies fuer den Bucket (lesen, hochladen, loeschen), nur authenticated, kein UPDATE',
     (SELECT count(*) = 3 FROM pg_policy WHERE polrelid='storage.objects'::regclass AND polname IN ('belege lesen','belege hochladen','belege loeschen')
        AND polroles = ARRAY['authenticated'::regrole::oid] AND polcmd IN ('r','a','d')))
+  ,('S3 keine anonymen Storage-Rechte fuer Belege aus einer weiteren Policy',
+    NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid='storage.objects'::regclass
+      AND p.polname NOT IN ('belege lesen','belege hochladen','belege loeschen')
+      AND p.polroles && ARRAY['anon'::regrole::oid, 0::oid]
+      AND (p.polqual::text ILIKE '%belege%' OR p.polwithcheck::text ILIKE '%belege%')))
+  ,('S4 Belege-Policies enthalten Mitgliedspruefung und Bucket-Bindung',
+    (SELECT count(*) = 3 FROM pg_policies
+      WHERE schemaname='storage' AND tablename='objects'
+        AND policyname IN ('belege lesen','belege hochladen','belege loeschen')
+        AND (qual ILIKE '%ist_mitglied%' OR with_check ILIKE '%ist_mitglied%')
+        AND (qual ILIKE '%belege%' OR with_check ILIKE '%belege%')))
 ) AS t(name, ok)
 ORDER BY name;
