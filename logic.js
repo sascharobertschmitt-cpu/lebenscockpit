@@ -16,10 +16,10 @@
   const round2 = (x) => Math.round(x * 100) / 100;
 
   function parseBetrag(s) {
-    let t = String(s == null ? '' : s).replace(/[€\s]/g, '');
+    let t = String(s == null ? '' : s).replace(/[€\s]/g, '').replace(/−/g, '-');
     if (t === '') return NaN;
     if (t.indexOf(',') !== -1) t = t.replace(/\./g, '').replace(',', '.');
-    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    else if (/^[+-]?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
     const n = Number(t);
     return Number.isFinite(n) ? n : NaN;
   }
@@ -74,7 +74,7 @@
       const d = occurrence(state, p, start, today);
       if (d === undefined) continue;
       const pay = state.zahlungen.find((z) => z.posten_id === p.id && z.finanzmonat === iso(start));
-      out.push({ p: p, date: d, paid: !!pay, pay: pay || null, betrag: num(p.betrag) });
+      out.push({ p: p, date: d, paid: !!pay, pay: pay || null, betrag: num(pay ? pay.betrag : p.betrag) });
     }
     out.sort((a, b) => {
       if (a.date && b.date) return a.date - b.date || a.p.name.localeCompare(b.p.name);
@@ -154,7 +154,7 @@
       for (const z of state.zahlungen) {
         if (new Date(z.erfasst_am).getTime() > standTs) {
           const p = state.posten.find((x) => x.id === z.posten_id);
-          if (p && p.zahlung === 'konto' && z.finanzmonat === iso(cs)) res.nachStand += num(z.betrag);
+          if (p && p.zahlung === 'konto') res.nachStand += num(z.betrag);
         }
       }
       res.nachStand = round2(res.nachStand);

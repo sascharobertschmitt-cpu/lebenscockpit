@@ -5,16 +5,27 @@
   var SUPABASE_URL = 'https://txxlniprkltweeenmexf.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_dRrI8RUR1X8ciGA8R8mUxg_CQYAYZua';
   var DISPO = 8000;
-  var VERSION = '1.0';
+  var VERSION = '1.1';
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], showDone: false, loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
+
+  var foldState = {};
+  try {
+    var savedFolds = JSON.parse(window.localStorage.getItem('cockpit-folds') || '{}');
+    if (savedFolds && typeof savedFolds === 'object' && !Array.isArray(savedFolds)) foldState = savedFolds;
+  } catch (e) { /* Die Ansicht funktioniert auch ohne verfügbaren Browserspeicher. */ }
+
+  function foldStart(key, title, defaultOpen) {
+    var open = typeof foldState[key] === 'boolean' ? foldState[key] : !!defaultOpen;
+    return '<details class="dash-fold" data-fold="' + esc(key) + '"' + (open ? ' open' : '') + '><summary>' + title + '</summary><div class="dash-fold-body">';
+  }
 
   // ---------- Helfer ----------
   function esc(s) {
@@ -50,11 +61,12 @@
       sb.from('einnahmen').select('*'),
       sb.from('posten').select('*'),
       sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }).limit(30),
-      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false })
+      sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
+      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
+      sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1)
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data; S.aufgaben = r[4].data;
+    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data;
     S.loaded = true;
   }
   async function reload() {
@@ -110,7 +122,15 @@
     }).join('') + '</nav>';
   }
 
+  function rememberFolds() {
+    $app.querySelectorAll('details[data-fold]').forEach(function (el) {
+      foldState[el.dataset.fold] = el.open;
+    });
+    try { window.localStorage.setItem('cockpit-folds', JSON.stringify(foldState)); } catch (err) {}
+  }
+
   function render() {
+    rememberFolds();
     if (!S.user) return renderLogin();
     var body = '';
     if (!S.loaded) body = '<p class="boot">Lädt…</p>';
@@ -167,7 +187,7 @@
     var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
-    h += '<details class="dash-fold" open><summary>Finanzlage bis zum Gehalt</summary><div class="dash-fold-body">';
+    h += foldStart('today-finances', 'Finanzlage bis zum Gehalt', true);
     if (!lage.next) {
       h += '<div class="card">Es ist kein Gehalt eingetragen.</div>';
     } else if (!lage.stand) {
@@ -184,7 +204,7 @@
     }
 
     h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Kontostände und Hinweise</summary><div class="dash-fold-body">';
+    h += foldStart('today-balances', 'Kontostände und Hinweise');
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
       var ageTxt = age <= 0 ? 'heute' : age === 1 ? 'gestern' : 'vor ' + age + ' Tagen';
@@ -198,7 +218,7 @@
       if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
     h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Restbudget im Detail</summary><div class="dash-fold-body">';
+    h += foldStart('today-budget', 'Restbudget im Detail');
     h += restbudget(lage);
     h += '</div></details>';
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
@@ -207,20 +227,20 @@
     var todayTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) <= t; });
     var futureTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) > t; }).sort(function (a,b) { return a.faellig.localeCompare(b.faellig); });
     var undatedTasks = open.filter(function (a) { return !a.faellig; });
-    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + todayTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+    h += foldStart('today-due', 'Aufgaben heute und überfällig (' + todayTasks.length + ')', true) + '<div class="card">' +
       (todayTasks.length ? todayTasks.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
-    h += '<details class="dash-fold"><summary>Zukünftige Aufgaben (' + futureTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+    h += foldStart('today-future', 'Zukünftige Aufgaben (' + futureTasks.length + ')', false) + '<div class="card">' +
       (futureTasks.length ? futureTasks.map(taskRow).join('') : '<div class="empty">Keine zukünftigen Aufgaben.</div>') + '</div></div></details>';
-    if (undatedTasks.length) h += '<details class="dash-fold"><summary>Aufgaben ohne Termin (' + undatedTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
+    if (undatedTasks.length) h += foldStart('today-undated', 'Aufgaben ohne Termin (' + undatedTasks.length + ')', false) + '<div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
 
     var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
-    h += '<details class="dash-fold"><summary>Bald fällige Zahlungen (' + soon.length + ')</summary><div class="dash-fold-body"><div class="card">' + (soon.length ? soon.map(function (it) {
+    h += foldStart('today-payments', 'Bald fällige Zahlungen (' + soon.length + ')', false) + '<div class="card">' + (soon.length ? soon.map(function (it) {
       return '<div class="row"><div class="main"><div class="t">' + esc(it.p.name) + '</div><div class="s">' + esc(fmtD(it.date)) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
     }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
 
     var klaeren = S.posten.filter(function (p) { return p.status === 'pruefen'; });
     if (klaeren.length) {
-      h += '<details class="dash-fold"><summary>Noch zu klären (' + klaeren.length + ')</summary><div class="dash-fold-body"><div class="card">' + klaeren.map(function (p) {
+      h += foldStart('today-clarify', 'Noch zu klären (' + klaeren.length + ')', false) + '<div class="card">' + klaeren.map(function (p) {
         return '<div class="row"><div class="main" data-action="posten-edit" data-id="' + esc(p.id) + '"><div class="t">' + esc(p.name) + '</div><div class="s">' + esc(p.notiz || 'Betrag oder Termin prüfen') + '</div></div><div class="amt">' + eur(Number(p.betrag)) + '</div></div>';
       }).join('') + '</div></div></details>';
     }
@@ -244,28 +264,28 @@
     var cs = L.periodStart(t);
     var m = L.monatSummary(S, cs, t);
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
-    h += restbudget(L.calcLage(S, t, DISPO));
+    h += foldStart('money-budget', 'Restbudget bis zum Gehalt', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
-    h += '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
+    h += foldStart('money-month', 'Monatsübersicht', true) + '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
       '<tr><td colspan="2" class="s" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">' + einnTxt + '</td></tr>' +
       '<tr><td>Feste Zahlungen</td><td>' + eur(m.fixkosten) + '</td></tr>' +
       (m.bar ? '<tr><td colspan="2" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">davon bar reserviert ' + eur(m.bar) + '</td></tr>' : '') +
-      '<tr class="now"><td>Bleibt für Alltag, Klarna, Kreditkarte, Dispozinsen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div>';
+      '<tr class="now"><td>Rest nach erfassten Zahlungen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div></div></details>';
 
     h += '<button data-action="posten-neu">Zahlung hinzufügen</button><p class="note">Klarna und Kreditkarte trägst du als einzelne Zahlung mit Datum ein.</p>';
 
     var offen = m.items.filter(function (i) { return !i.paid; });
     var bezahlt = m.items.filter(function (i) { return i.paid; });
-    h += '<h2>Offen (' + offen.length + ')</h2><div class="card">' + (offen.length ? offen.map(itemRow).join('') : '<div class="empty">Alles bezahlt.</div>') + '</div>';
-    h += '<h2>Bezahlt (' + bezahlt.length + ')</h2><div class="card">' + (bezahlt.length ? bezahlt.map(itemRow).join('') : '<div class="empty">Noch nichts abgehakt.</div>') + '</div>';
+    h += foldStart('money-open', 'Offen (' + offen.length + ')', true) + '<div class="card">' + (offen.length ? offen.map(itemRow).join('') : '<div class="empty">Alles bezahlt.</div>') + '</div></div></details>';
+    h += foldStart('money-paid', 'Bezahlt (' + bezahlt.length + ')', false) + '<div class="card">' + (bezahlt.length ? bezahlt.map(itemRow).join('') : '<div class="empty">Noch nichts abgehakt.</div>') + '</div></div></details>';
 
     var v = L.vorschau(S, t, 6);
-    h += '<h2>Vorschau der nächsten Monate</h2><div class="card"><table><tr><th>Bis</th><th>Einnahmen</th><th>Feste Zahlungen</th><th>Rest</th></tr>' +
+    h += foldStart('money-forecast', 'Vorschau der nächsten Monate') + '<div class="card"><table><tr><th>Bis</th><th>Einnahmen</th><th>Feste Zahlungen</th><th>Rest</th></tr>' +
       v.map(function (x, i) {
         var step = i > 0 && Math.abs(x.fixkosten - v[i - 1].fixkosten) > 0.5;
         return '<tr class="' + (i === 0 ? 'now ' : '') + (step ? 'step' : '') + '"><td>' + esc(fmtD(x.end)) + '</td><td>' + eur0(x.einnahmen) + '</td><td>' + eur0(x.fixkosten) + '</td><td>' + eur0(x.rest) + '</td></tr>';
-      }).join('') + '</table><p class="note">Rot markiert: Hier ändern sich die festen Zahlungen, zum Beispiel durch eine neue Rate.</p></div>';
+      }).join('') + '</table><p class="note">Rot markiert: Hier ändern sich die festen Zahlungen, zum Beispiel durch eine neue Rate.</p></div></div></details>';
     return h;
   }
 
@@ -281,16 +301,15 @@
     ];
     var h = head('Aufgaben', open.length + ' offen') + '<button class="primary" data-action="aufgabe-neu">Aufgabe hinzufügen</button>';
     var any = false;
-    groups.forEach(function (g) {
+    groups.forEach(function (g, index) {
       if (!g[1].length) return;
       any = true;
-      h += '<h2>' + g[0] + '</h2><div class="card">' + g[1].map(taskRow).join('') + '</div>';
+      h += foldStart('tasks-' + index, g[0] + ' (' + g[1].length + ')', index < 2) + '<div class="card">' + g[1].map(taskRow).join('') + '</div></div></details>';
     });
     if (!any) h += '<div class="card"><div class="empty">Keine offenen Aufgaben.</div></div>';
-    var done = S.aufgaben.filter(function (a) { return a.erledigt; }).sort(function (a, b) { return String(b.erledigt_am).localeCompare(String(a.erledigt_am)); }).slice(0, 15);
+    var done = S.aufgaben.filter(function (a) { return a.erledigt; }).sort(function (a, b) { return String(b.erledigt_am).localeCompare(String(a.erledigt_am)); });
     if (done.length) {
-      h += '<h2><span data-action="toggle-done" style="cursor:pointer">Erledigt (' + done.length + ') ' + (S.showDone ? 'ausblenden' : 'anzeigen') + '</span></h2>';
-      if (S.showDone) h += '<div class="card">' + done.map(taskRow).join('') + '</div>';
+      h += foldStart('tasks-done', 'Erledigt (' + done.length + ')') + '<div class="card">' + done.map(taskRow).join('') + '</div></div></details>';
     }
     return h;
   }
@@ -478,6 +497,15 @@
   }
 
   // ---------- Ereignisse ----------
+  window.addEventListener('pagehide', rememberFolds);
+  // toggle blubbert nicht; Capture erfasst auch die dynamisch gerenderten Bereiche.
+  document.addEventListener('toggle', function (e) {
+    var el = e.target;
+    if (!el.dataset || !el.dataset.fold || el.isConnected === false) return;
+    foldState[el.dataset.fold] = el.open;
+    try { window.localStorage.setItem('cockpit-folds', JSON.stringify(foldState)); } catch (err) {}
+  }, true);
+
   document.addEventListener('click', function (e) {
     if (e.target === $modal) { closeModal(); return; }
     var el = e.target.closest('[data-action]');
@@ -491,7 +519,6 @@
     else if (a === 'aufgabe-neu') modalAufgabe(null);
     else if (a === 'aufgabe-edit') modalAufgabe(id);
     else if (a === 'close-modal') closeModal();
-    else if (a === 'toggle-done') { S.showDone = !S.showDone; render(); }
     else if (a === 'refresh') run(async function () { await loadAll(); render(); toast('Aktualisiert'); });
     else if (a === 'backup') run(backup);
     else if (a === 'logout') logout();

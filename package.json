@@ -1,0 +1,12 @@
+{
+  "name": "lebenscockpit",
+  "private": true,
+  "version": "1.1.0",
+  "scripts": {
+    "test": "node test/logic.test.js && node test/smoke.test.js",
+    "test:browser": "node test/browser.test.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

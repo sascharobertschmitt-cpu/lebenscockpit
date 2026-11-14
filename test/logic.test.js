@@ -91,6 +91,11 @@ assert.strictEqual(L.parseBetrag('1.840,50'), 1840.5);
 assert.strictEqual(L.parseBetrag('1840,5'), 1840.5);
 assert.strictEqual(L.parseBetrag('1840.5'), 1840.5);
 assert.strictEqual(L.parseBetrag('1.840'), 1840);
+assert.strictEqual(L.parseBetrag('-7.000'), -7000);
+assert.strictEqual(L.parseBetrag('−7.000'), -7000);
+assert.strictEqual(L.parseBetrag('-7.623,29 €'), -7623.29);
+assert.strictEqual(L.parseBetrag('-7623.29'), -7623.29);
+assert.strictEqual(L.parseBetrag('+1.840'), 1840);
 assert.strictEqual(L.parseBetrag('86 €'), 86);
 assert.ok(Number.isNaN(L.parseBetrag('')));
 assert.ok(Number.isNaN(L.parseBetrag('abc')));
@@ -121,4 +126,27 @@ console.log('Alle Tests bestanden');
   assert.strictEqual(lL.luna.betrag, 300);
   assert.strictEqual(lL.gesamt, Math.round((lL.verfuegbar + 300) * 100) / 100);
   console.log('Luna-Gegenrechnung ok');
+}
+
+// Zahlung aus dem vorherigen Finanzmonat nach einem älteren Kontostand:
+// Beim Monatswechsel darf sie nicht aus der Rechnung verschwinden.
+{
+  const state = {
+    posten: [{ id: 'old', name: 'Einmalige Rechnung', rhythmus: 'einmalig', faellig_am: '2026-11-24', zahlung: 'konto', betrag: 100 }],
+    einnahmen: [{ person: 'Sascha', tag_im_monat: 10, betrag: 1000 }],
+    zahlungen: [{ posten_id: 'old', finanzmonat: '2026-10-25', betrag: 100, erfasst_am: '2026-11-24T12:00:00Z' }],
+    staende: [{ konto: 'sascha', betrag: 500, erfasst_am: '2026-11-23T12:00:00Z' }]
+  };
+  close(L.calcLage(state, D('2026-11-26')).verfuegbar, 400, 'Zahlung vor Finanzmonatswechsel bleibt abgezogen');
+  state.staende[0] = { konto: 'sascha', betrag: 400, erfasst_am: '2026-11-25T12:00:00Z' };
+  close(L.calcLage(state, D('2026-11-26')).verfuegbar, 400, 'Neuer Stand zählt die Zahlung nicht doppelt');
+}
+
+// Eine spätere Änderung am Planbetrag verändert keine bereits erfasste Zahlung.
+{
+  const state = fresh();
+  state.zahlungen[0] = { ...state.zahlungen[0], betrag: 80 };
+  const item = L.itemsForPeriod(state, cs, today).find(i => i.p.id === 'auto1');
+  close(item.betrag, 80, 'Gebuchter Betrag bleibt maßgeblich');
+  close(L.monatSummary(state, cs, today).bezahlt, 80, 'Bezahlt-Summe nutzt Buchung');
 }
