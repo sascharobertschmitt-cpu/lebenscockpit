@@ -298,6 +298,7 @@
   function viewMehr() {
     return head('Mehr', 'Version ' + VERSION) +
       '<div class="card"><div class="row"><div class="main"><div class="t">Angemeldet als</div><div class="s">' + esc(S.user.email) + '</div></div></div></div>' +
+      '<button data-action="belege-open">Belege verwalten</button><div style="height:10px"></div>' +
       '<button data-action="refresh">Daten neu laden</button><div style="height:10px"></div>' +
       '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
       '<button class="danger" data-action="logout">Abmelden</button>';
@@ -433,6 +434,52 @@
     closeModal(); await loadAll(); render(); toast('Gespeichert');
   }
 
+  // ---------- Belege (requires staged migrations 01-03) ----------
+  async function modalBelege() {
+    openModal('<h1>Belege</h1><p class="note">Private Dokumente für den Haushalt.</p><p class="note">Lädt…</p>');
+    var r = await sb.from('belege').select('id,storage_pfad,dateiname,erstellt_am').order('erstellt_am', { ascending: false }).limit(100);
+    if (r.error) {
+      openModal('<h1>Belege</h1><p class="note">Belegverwaltung ist noch nicht freigeschaltet.</p><div class="actions"><button data-action="close-modal">Schließen</button></div>');
+      return;
+    }
+    var list = r.data.map(function (b) {
+      return '<div class="row"><div class="main"><div class="t">' + esc(b.dateiname) + '</div><div class="s">' + esc(new Date(b.erstellt_am).toLocaleDateString('de-DE')) + '</div></div><button type="button" data-action="beleg-download" data-path="' + esc(b.storage_pfad) + '">Öffnen</button></div>';
+    }).join('');
+    openModal('<h1>Belege</h1><form data-form="beleg-upload">' +
+      '<label for="beleg-file">PDF oder Foto (max. 10 MB)</label><input id="beleg-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" required>' +
+      '<div class="err" id="beleg-err"></div><div class="actions"><button type="button" data-action="close-modal">Schließen</button><button class="primary" type="submit">Hochladen</button></div></form>' +
+      '<h2>Gespeicherte Belege</h2><div class="card">' + (list || '<div class="empty">Noch keine Belege.</div>') + '</div>');
+  }
+  async function uploadBeleg(form) {
+    var el = form.querySelector('#beleg-file'), file = el.files && el.files[0];
+    var err = form.querySelector('#beleg-err');
+    if (!file) return;
+    var allowed = ['application/pdf','image/jpeg','image/png','image/webp'];
+    if (allowed.indexOf(file.type) < 0 || file.size < 1 || file.size > 10485760) {
+      err.textContent = 'Nur PDF, JPG, PNG oder WebP bis 10 MB.'; return;
+    }
+    var id = crypto.randomUUID();
+    var ext = { 'application/pdf':'pdf', 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[file.type];
+    var path = S.user.id + '/' + id + '/beleg.' + ext;
+    var up = await sb.storage.from('belege').upload(path, file, { contentType: file.type, upsert: false });
+    if (up.error) throw up.error;
+    var ins = await sb.from('belege').insert({
+      id: id, storage_pfad: path, dateiname: file.name,
+      mime_typ: file.type, dateigroesse: file.size
+    });
+    if (ins.error) {
+      err.textContent = 'Datei hochgeladen, aber Metadaten konnten nicht gespeichert werden. Bitte nicht erneut hochladen. Fehler: ' + ins.error.message;
+      return;
+    }
+    await modalBelege();
+    toast('Beleg gespeichert');
+  }
+  async function downloadBeleg(path) {
+    var r = await sb.storage.from('belege').createSignedUrl(path, 60);
+    if (r.error) throw r.error;
+    window.open(r.data.signedUrl, '_blank', 'noopener,noreferrer');
+  }
+
   // ---------- Aktionen ----------
   async function togglePaid(id, checked) {
     var t = todayD(), cs = L.periodStart(t);
@@ -494,6 +541,8 @@
     else if (a === 'toggle-done') { S.showDone = !S.showDone; render(); }
     else if (a === 'refresh') run(async function () { await loadAll(); render(); toast('Aktualisiert'); });
     else if (a === 'backup') run(backup);
+    else if (a === 'belege-open') run(modalBelege);
+    else if (a === 'beleg-download') run(function () { return downloadBeleg(el.dataset.path); });
     else if (a === 'logout') logout();
     else if (a === 'posten-delete') {
       if (!confirm('Diese Zahlung wirklich löschen?')) return;
@@ -522,6 +571,7 @@
     else if (k === 'posten-edit') run(function () { return savePosten(f); });
     else if (k === 'posten-neu') run(function () { return savePostenNeu(f); });
     else if (k === 'aufgabe') run(function () { return saveAufgabe(f); });
+    else if (k === 'beleg-upload') run(function () { return uploadBeleg(f); });
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && S.user && !$modal.innerHTML && !S.busy) reload();
