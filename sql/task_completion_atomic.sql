@@ -42,6 +42,14 @@ BEGIN
     ELSE
       IF FOUND THEN
         IF v_child.erledigt THEN RAISE EXCEPTION 'Successor already completed'; END IF;
+        -- Never silently discard a successor that someone has edited.
+        IF v_child.titel IS DISTINCT FROM v_task.titel
+          OR v_child.zustaendig IS DISTINCT FROM v_task.zustaendig
+          OR v_child.wiederholung IS DISTINCT FROM v_task.wiederholung
+          OR EXISTS (SELECT 1 FROM public.aufgaben WHERE vorgaenger_id = v_child.id)
+        THEN
+          RAISE EXCEPTION 'Successor was changed or has descendants; undo is blocked';
+        END IF;
         DELETE FROM public.aufgaben WHERE id = v_child.id;
         IF NOT FOUND THEN RAISE EXCEPTION 'Successor could not be deleted'; END IF;
       END IF;
