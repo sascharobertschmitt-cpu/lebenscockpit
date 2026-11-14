@@ -1,0 +1,23 @@
+name: Lebenscockpit tests
+on:
+  push:
+    branches:
+      - claude/focused-tesla-rzq98z
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Logic tests
+        run: node test/logic.test.js
+      - name: Smoke tests
+        run: node test/smoke.test.js
+      - name: Calendar draft tests
+        run: node test/calendar-draft.test.js
