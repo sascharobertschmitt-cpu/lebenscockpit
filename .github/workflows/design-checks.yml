@@ -1,0 +1,27 @@
+name: Obsidian Aurora checks
+on:
+  push:
+    branches: [feature/obsidian-aurora-design]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check app.js
+          node --check logic.js
+      - name: Existing logic and smoke tests
+        run: |
+          node test/logic.test.js
+          node test/smoke.test.js
+      - name: Ensure no bank CSV feature was included
+        run: |
+          ! grep -q 'bank-csv.js' index.html
+          ! grep -q 'bankImportModal' app.js
