@@ -16,7 +16,7 @@ create policy "belege_download_mitglieder" on storage.objects
   bucket_id = 'belege'
   and (select private.ist_mitglied())
   and exists (
-    select 1 from public.belege b where b.storage_pfad = name
+    select 1 from public.belege b where b.storage_pfad = storage.objects.name
   )
  );
 -- No UPDATE or DELETE: uploads are immutable, no upsert.
