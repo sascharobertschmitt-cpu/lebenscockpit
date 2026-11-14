@@ -46,6 +46,7 @@ Die Migration ersetzt `ON DELETE CASCADE` durch `ON DELETE RESTRICT` an `posten_
 - `mitglieder`: RLS aktiviert, keine eigene Policy. Das ist nicht automatisch eine Schwachstelle; Auswirkungen auf legitime Nutzer und Verwaltungsprozesse prüfen.
 - Supabase Advisor: Schutz gegen geleakte Passwörter deaktiviert. Siehe https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
 - Eine mögliche Umstellung auf Auth-UID-basierte Mitgliedschaft erfordert eigene Migrations- und Zugriffstests.
+- Funktionsdefinition geprüft: `private.ist_mitglied()` ist `SECURITY DEFINER` mit leerem `search_path` und vergleicht die E-Mail aus `auth.jwt()` gegen `mitglieder.email`. Dies ist keine nachgewiesene Fremdzugriffslücke, bindet die Berechtigung aber an E-Mail-Claims statt an unveränderliche Auth-IDs. Rollen-/Ausführungsrechte, E-Mail-Verifizierung und Änderungen an Mitgliedschaften vor Freigabe gezielt testen.
 
 ## Abnahme-Gates für M1
 
