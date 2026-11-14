@@ -96,37 +96,10 @@ jobs:
           SQL
 
       - name: Isolierte Backup-Wiederherstellung mit synthetischen Daten
+        # Ausschliesslich synthetische CI-Daten, kein Zugriff auf Supabase-Produktion.
+        # Client-Werkzeuge aus demselben Image wie der Server (PostgreSQL 17).
+        # Der Dump liegt nur im temporaeren Verzeichnis des Containers, kein Artefakt-Upload.
         run: |
-          set -euo pipefail
-          # Ausschliesslich synthetische CI-Daten. Kein Zugriff auf Supabase-Produktion.
-          docker run --rm --network host -e PGHOST=127.0.0.1 -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -v "$RUNNER_TEMP:/backup" postgres:17 pg_dump --format=custom --no-owner --no-acl --schema=public --file=/backup/lebenscockpit-ci.dump
-          test -s "$RUNNER_TEMP/lebenscockpit-ci.dump"
-          createdb lebenscockpit_restore
-          psql -v ON_ERROR_STOP=1 -d lebenscockpit_restore -c 'DROP SCHEMA public CASCADE'
-          docker run --rm --network host -e PGHOST=127.0.0.1 -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -v "$RUNNER_TEMP:/backup" postgres:17 pg_restore --exit-on-error --no-owner --no-acl -d lebenscockpit_restore /backup/lebenscockpit-ci.dump
-          psql -v ON_ERROR_STOP=1 -d lebenscockpit_restore <<'SQL'
-          DO $$
-          BEGIN
-            IF (SELECT count(*) FROM public.posten) <> 1
-               OR (SELECT count(*) FROM public.posten_zahlungen) <> 1 THEN
-              RAISE EXCEPTION 'Backup-Restore: Anzahl der Datensaetze weicht ab';
-            END IF;
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_constraint
-              WHERE conname = 'posten_zahlungen_posten_id_fkey'
-                AND confdeltype = 'r'
-            ) THEN
-              RAISE EXCEPTION 'Backup-Restore: Schutz der Zahlungshistorie fehlt';
-            END IF;
-            BEGIN
-              DELETE FROM public.posten
-              WHERE id = '00000000-0000-0000-0000-000000000001';
-              RAISE EXCEPTION 'Backup-Restore: Historie wurde geloescht';
-            EXCEPTION WHEN foreign_key_violation THEN NULL;
-            END;
-            IF (SELECT count(*) FROM public.posten_zahlungen) <> 1 THEN
-              RAISE EXCEPTION 'Backup-Restore: Zahlungsdatensatz fehlt';
-            END IF;
-          END $$;
-          SQL
-          rm -f "$RUNNER_TEMP/lebenscockpit-ci.dump"
+          docker run --rm --network host -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            -e PGHOST=127.0.0.1 -e PGPORT -e PGUSER -e PGPASSWORD \
+            postgres:17 bash test/db/backup_restore.sh

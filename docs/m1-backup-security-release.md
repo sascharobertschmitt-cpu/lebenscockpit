@@ -17,7 +17,7 @@ Stand: 14.11.2026. **M1 ist nicht freigegeben.** Dieses Dokument ist ein Prüf- 
 4. Supabase-Projekteinstellungen, verwendete Environment-Konfiguration und Deployment-Konfiguration separat dokumentieren.
 5. Versionsstand des Anwendungscodes und der Migrationen (Git-Commit).
 
-Der aktuelle JSON-Export der Web-App deckt **nur fünf operative Tabellen** ab. Er ist kein vollständiges Systembackup und enthält keine Wiederherstellungsfunktion.
+Der aktuelle JSON-Export der Web-App deckt **nur fünf operative Tabellen** ab (ohne `mitglieder`, ohne Schema, RLS, Funktionen, Rechte und Auth). Er ist kein vollständiges Systembackup und enthält keine Wiederherstellungsfunktion.
 
 ## Verbindlicher Wiederherstellungstest
 
@@ -65,8 +65,63 @@ Die Migration ersetzt `ON DELETE CASCADE` durch `ON DELETE RESTRICT` an `posten_
 
 ## Isolierter technischer Restore-Test (CI)
 
-Der Job `database-integrity` erstellt nach den Datenbankintegritätstests mit `pg_dump` ein Custom-Format-Backup der **synthetischen** Testtabellen, stellt es in einer neuen PostgreSQL-17-Testdatenbank mit `pg_restore` wieder her und prüft die Anzahl der Posten/Zahlungen sowie den wiederhergestellten Fremdschlüssel mit `ON DELETE RESTRICT`. Ein Test mit produktiven Supabase-Daten ist dies **nicht**. Der CI-Dump wird nicht als Artefakt hochgeladen.
+Skript: `test/db/backup_restore.sh` (läuft im Job `database-integrity` und lokal, siehe Kopf des Skripts). Ausschließlich **synthetische** Daten, kein Zugriff auf Supabase, Dump wird nicht hochgeladen.
 
-**Für echte produktive Backups weiterhin offen:** Plan-/Backup-Verfügbarkeit im Supabase-Dashboard prüfen: https://supabase.com/dashboard/project/txxlniprkltweeenmexf/database/backups/scheduled . Laut Supabase-Dokumentation sind automatische tägliche Backups an kostenpflichtige Pläne gebunden; auf dem Free-Plan empfiehlt Supabase regelmäßige externe logische Dumps. Projektplan und tatsächlich vorhandene Backups wurden noch nicht bestätigt. https://supabase.com/docs/guides/platform/backups
+| Datei | Zweck |
+|---|---|
+| `test/db/supabase_stub.sql` | Nachbau von Rollen, `auth.jwt()` und Supabase-Default-Privileges (in Quelle **und** Ziel) |
+| `test/db/restore_fixture.sql` | Schema wie Produktion (Spalten, Checks, Unique/FK, Indizes, RLS, Policies, `private.ist_mitglied()`), synthetische Grenzwertdaten |
+| `test/db/fingerprint.sql` | Fingerabdruck: Zeilenzahl + MD5 je Tabelle, Spalten, Constraints, Indizes, RLS, Policies, Funktionen, Tabellen-/Funktions-/Default-Rechte. Gibt keine Datenwerte aus |
+| `test/db/restore_checks.sql` | Funktionsprüfung: Mitglied liest/schreibt, Upsert `posten_id,finanzmonat`, Nicht-Mitglied sieht nichts, `anon` ohne Zugriff, kein `TRUNCATE`, FK `RESTRICT`, CHECK |
 
-**Kein produktiver Restore ohne gesonderte Freigabe.** Ein Test auf dem Live-Projekt könnte den aktuellen Datenstand überschreiben. Ein belastbarer M1-Abnahmenachweis benötigt eine isolierte, autorisierte Wiederherstellung einer echten Sicherung, Prüfung der Benutzer-/RLS-Funktion und sichere externe Aufbewahrung; ohne dafür geeignete Testumgebung bleibt dieses Gate offen.
+Ablauf: Quelle aufbauen → Funktionsprüfung Quelle → `pg_dump -Fc --schema=public --schema=private` **mit** Rechten → Prüfsumme und Inhaltsverzeichnis (Daten aller 6 Tabellen, 5 Policies, Funktion, ACL, Default-ACL) → Restore in ein wie ein frisches Supabase-Projekt vorbereitetes Ziel → Sicherheitsmigration erneut anwenden → Fingerabdruck Quelle = Ziel (236 Prüfpunkte) → Funktionsprüfung Ziel.
+
+Schutz gegen falsch-positive Ergebnisse (Negativkontrollen, alle müssen anschlagen):
+1. Ein um 0,01 veränderter Zahlungsbetrag wird erkannt, und zwar genau in `posten_zahlungen`.
+2. Ein Restore mit `--no-acl` ohne erneute Migration wird von Fingerabdruck **und** Funktionsprüfung erkannt.
+3. Ein reiner `--schema=public`-Dump (frühere CI-Variante) scheitert, weil `private.ist_mitglied()` fehlt.
+
+Außerdem prüft das Skript, dass Client- und Server-Hauptversion übereinstimmen. Die SHA-256 des Dumps ändert sich bei jedem Lauf (Zeitstempel im Dump) und dient nur dem Integritätsnachweis der jeweiligen Datei.
+
+### Befunde aus dem Test (für den echten Restore relevant)
+
+- **Rechte gehen beim Restore verloren, auch mit Rechten im Dump.** Neue Tabellen erhalten im Ziel die Supabase-Default-Privileges (`anon`/`authenticated`: alles inkl. `TRUNCATE`). Die im Dump gespeicherten Rechte entfernen diese nicht. Im Test: 146 abweichende Rechtezeilen direkt nach dem Restore, u. a. `anon` mit `TRUNCATE`. Supabase dokumentiert das ebenfalls („tables inherit ALL privileges from default privileges in the target database“). **Pflicht nach jedem Restore:** Sicherheitsmigration `20261114120000_…` erneut anwenden und Rechte prüfen. Danach ist der Fingerabdruck identisch.
+- **Die frühere CI-Variante `--schema=public --no-acl` war als Sicherung unvollständig:** ohne `private.ist_mitglied()` lassen sich die Policies nicht wiederherstellen, und ohne Rechte wäre die Härtung weg. Der alte Test war trotzdem grün, weil die Testtabellen weder RLS noch Funktionen hatten.
+- `auth`-Schema, Rollen und Auth-Benutzer sind in keinem `public/private`-Dump enthalten. Da die Mitgliedschaft über die E-Mail läuft, funktioniert die App nach einem Restore nur, wenn die Benutzer mit denselben E-Mail-Adressen existieren.
+
+### Grenzen des CI-Tests
+
+Kein echtes Supabase (nur Nachbau von Rollen, `auth.jwt()` und Default-Privileges), keine echten Daten, kein Auth-Dienst, kein PostgREST. Der Funktionsrumpf von `private.ist_mitglied()` ist nachgebildet. Der CI-Test beweist das **Verfahren**, nicht die Wiederherstellbarkeit der Produktionsdaten.
+
+## Plan: echte Produktionssicherung mit isoliertem Restore-Test
+
+**Geprüfte Fakten (14.11.2026):** Organisation im **Free-Plan**, Projekt `Lebenscockpit`, PostgreSQL 17, Region eu-central-1. Laut Supabase-Doku gibt es automatische tägliche Backups nur ab Pro (Pro 7 Tage, Team 14, Enterprise 30); für Free empfiehlt Supabase regelmäßige `supabase db dump`-Exporte und externe Aufbewahrung. PITR ist ein kostenpflichtiges Add-on. Quelle: https://supabase.com/docs/guides/platform/backups und https://supabase.com/docs/reference/cli/supabase-db-dump
+
+**Ungeprüft:** ob im Dashboard trotzdem Backups angezeigt werden, ob im Free-Plan ein weiteres Projekt als Restore-Ziel frei ist, Datenmenge von `auth.users`.
+
+Durchführung **lokal auf deinem Rechner**, nie in GitHub Actions (Produktionsdaten und Verbindungsdaten dürfen nicht nach GitHub). Kosten: 0 €.
+
+1. **Vorbereitung:** Supabase CLI und Docker installieren. Verbindungszeichenfolge (Session Pooler) aus dem Dashboard nur als Umgebungsvariable setzen, nicht in Dateien oder Shell-Historie speichern.
+2. **Sicherung (nur lesend):**
+   ```sh
+   supabase db dump --db-url "$PROD_DB_URL" -f roles.sql --role-only
+   supabase db dump --db-url "$PROD_DB_URL" -f schema.sql
+   supabase db dump --db-url "$PROD_DB_URL" -f data.sql --use-copy --data-only
+   ```
+   `data.sql` enthält laut Doku auch `auth.users`. Zusätzlich die Auth-Konfiguration (Provider, Redirect-URLs, E-Mail-Vorlagen, SMTP), Projekteinstellungen und den Git-Commit schriftlich festhalten. Secrets (JWT-Secret, Service-Key, DB-Passwort) nicht in die Sicherung schreiben.
+3. **Verschlüsseln und extern aufbewahren:** z. B. `age` oder `gpg --symmetric` (AES-256), Passwort im Passwortmanager. Zwei Orte: externes Medium und ein Cloud-Speicher außerhalb von GitHub. SHA-256 und Erstellungszeit notieren. Unverschlüsselte Dateien danach löschen.
+4. **Isolierter Restore:** lokales Supabase (`supabase start`, PostgreSQL-Hauptversion auf 17 stellen) ohne Verbindung zur Produktion. Vor dem Schema: `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;`. Dann `roles.sql`, `schema.sql`, `data.sql` mit `psql --single-transaction -v ON_ERROR_STOP=1` einspielen. Danach beide Migrationen anwenden (falls noch nicht produktiv) bzw. die Sicherheitsmigration erneut.
+5. **Vergleich:** `test/db/fingerprint.sql` gegen Produktion (nur Lesen, lokal ausgeführt) und gegen die Wiederherstellung laufen lassen, `diff`. Erwartete Abweichungen nur durch die neu angewendeten Migrationen. Die Ausgabe enthält nur Prüfsummen und Strukturen, trotzdem nicht in GitHub posten.
+6. **Funktionsprüfung:** lokale App gegen das lokale Supabase, Anmeldung mit beiden Mitglieds-E-Mails, Daten sichtbar; Anmeldung mit fremder E-Mail sieht nichts; `anon` ohne Zugriff; Rechte mit `has_table_privilege` prüfen. Dauer und Fehler protokollieren.
+7. **Rhythmus:** vor jeder produktiven Migration und mindestens monatlich. Optional später: Pro-Plan (tägliche Backups, kostenpflichtig, nur nach deiner Zustimmung).
+
+## M1-Abnahmekriterien
+
+1. CI grün, inklusive `test/db/backup_restore.sh` mit allen drei Negativkontrollen.
+2. Echte Sicherung nach Plan erstellt: drei Dateien, verschlüsselt, an zwei Orten außerhalb von GitHub, SHA-256 und Zeitpunkt dokumentiert.
+3. Isolierter Restore erfolgreich, Fingerabdruck-Vergleich ohne unerklärte Abweichung, Funktionsprüfung (Mitglied, Nicht-Mitglied, `anon`) bestanden, Dauer dokumentiert.
+4. Rechte nach Restore geprüft: `anon` ohne Tabellenrechte, `authenticated` ohne `TRUNCATE/REFERENCES/TRIGGER/MAINTAIN`.
+5. Erst danach: Migrationen produktiv anwenden, im Wartungsfenster, mit frischer Sicherung direkt davor und anschließender Rechte- und Funktionsprüfung.
+6. Restpunkte bewusst entschieden: Leaked-Password-Protection, E-Mail-basierte Mitgliedschaft, Default-Privileges von `supabase_admin`.
+
+**Kein produktiver Restore ohne gesonderte Freigabe.** Ein Restore auf das Live-Projekt würde den aktuellen Datenstand überschreiben.
