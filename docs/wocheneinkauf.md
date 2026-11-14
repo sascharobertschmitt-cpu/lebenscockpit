@@ -9,6 +9,17 @@ Stand: 14.11.2026. Nur auf dem Entwicklungsbranch umgesetzt und getestet. **Nich
 4. **Woche = Montag bis Sonntag**, jede Woche beginnt bei 0, nicht verbrauchtes Geld wird nicht übertragen.
 5. **Die Einkäufe laufen separat vom Restbudget bis zum Gehalt.** Sie werden dort nicht noch einmal abgezogen: Was mit Karte bezahlt wurde, steckt schon im Kontostand, und Bargeld ist in der Kontorechnung ohnehin nicht enthalten. Sonst würde doppelt gezählt.
 
+## Erfassung über ChatGPT (aktueller Weg)
+Statt automatischer Auslese in der App (Anthropic-API, Edge-Function, API-Key) läuft die Erkennung in ChatGPT. Die App bekommt dafür keine Zugangsdaten.
+1. Luna lädt den Bon in ChatGPT hoch und sendet den Prompt (Button „Prompt für ChatGPT kopieren“, enthält die aktiven Limit-Namen).
+2. ChatGPT antwortet mit einer Zeile je Einkauf: `Betrag; Datum; Händler; Limit`. Ist es unsicher, schreibt es `FRAGE:` statt zu raten.
+3. Luna fügt die Antwort in der App unter „Aus ChatGPT einfügen“ ein. Die App prüft jede Zeile streng (Betrag über 0, gültiges Datum der letzten 12 Monate, Limit existiert und ist eindeutig, höchstens 30 Zeilen, Duplikat-Warnung) und zeigt eine Vorschau mit Summe.
+4. Erst „Buchen“ speichert, in einer einzigen Anweisung (alles oder nichts). Feste IDs verhindern Doppelbuchung bei Wiederholung nach Netzfehler. Bei auch nur einer fehlerhaften Zeile ist Buchen gesperrt.
+
+Das Bild bleibt in ChatGPT. Der Foto-Upload in der App (privater Bucket) bleibt optional erhalten.
+
+**Preis dieses Wegs:** Die Bons gehen an OpenAI und nicht mehr nur an Supabase. Prüft, ob das für Kassenbons (Kartenziffern, Kundenkarten) in Ordnung ist, und schaltet in ChatGPT das Training mit Chats ab, falls nicht geschehen. Außerdem bleibt es ein Handgriff mehr (Kopieren und Einfügen), und ChatGPT kann Beträge falsch lesen: Die Vorschau ist der Prüfpunkt, die App kann nicht erkennen, ob 23,45 wirklich auf dem Bon steht.
+
 ## Was gebaut ist
 - **Dashboard (Heute):** Karte „Wocheneinkauf“ direkt unter „Kontostand aktualisieren“. Oben „Diese Woche noch übrig“ und die Summe, darunter je Limit Betrag, Balken (gelb ab 80 %, rot bei Überschreitung), Rest, „rund X € pro Tag“ und die verbleibenden Tage.
 - **Einkauf erfassen:** Limit, Betrag, Datum, Notiz, optional Foto (Kamera oder Mediathek). Das Foto wird auf dem Gerät auf max. 1600 px verkleinert und als JPEG neu kodiert. Das spart Speicher und entfernt EXIF/GPS-Daten.
@@ -29,6 +40,7 @@ Der Storage-Teil ist bewusst getrennt: Die Tabelle `storage.objects` gehört in 
 
 ## Getestet
 - 175 Datenbanktests auf isoliertem PostgreSQL 16 (davon rund 50 neu): Constraints, RLS für Mitglied, Nicht-Mitglied und anon, TRUNCATE verweigert, Restriktion beim Löschen von Limits, Storage-Policies (Namensformat, fremder Bucket, kein UPDATE, nur Mitglieder), Idempotenz, Rollback und Neuanwendung.
+- Textimport: Formate (Komma/Punkt, TT.MM.JJJJ/ISO, Code-Block, Markdown-Tabelle, Tab), Limit-Zuordnung, 10 Fehlerfälle, Duplikate, Grenzen. Smoke-Test: Vorschau, Buchen, Wiederholung mit gleichen IDs, Fehlertext bucht nichts.
 - Rechenlogik (Wochengrenzen inkl. Jahreswechsel und Zeitumstellung, Cent-Genauigkeit, Überschreitung, inaktive Limits).
 - App-Smoke-Test: Karte, Erfassen, Wiederholung, Validierung, Foto-Upload und Aufräumen, Belegansicht, Löschen, Limits, „Tabellen fehlen“.
 - Gerendert auf 390 px Breite (kein horizontaler Überlauf, keine Konsolenfehler). Dabei fiel ein Darstellungsfehler auf (Balken-Klasse kollidierte mit einer bestehenden Klasse), er ist behoben.

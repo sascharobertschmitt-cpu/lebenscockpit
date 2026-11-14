@@ -66,7 +66,7 @@ const user = { email: 'test@example.com' };
 const sandbox = {
   document, console, Intl, Date, Math, Number, String, Object, Array, JSON, Promise, setTimeout, clearTimeout, File: class {},
   Image: class { set src(v) { this.naturalWidth = 3000; this.naturalHeight = 2000; setTimeout(() => this.onload && this.onload(), 0); } },
-  navigator: {}, URL: { createObjectURL() { return ''; }, revokeObjectURL() {} },
+  navigator: { clipboard: { writeText: async (t) => { calls.push(['clipboard', t]); } } }, URL: { createObjectURL() { return ''; }, revokeObjectURL() {} },
   confirm: () => true, scrollTo() {},
   window: null
 };
@@ -280,6 +280,55 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(/größer als 0/.test(liFields['#li-err'].textContent) && calls.filter((c) => c[0] === 'einkauf_limits' && c[1] === 'insert').length === nIns, 'negatives Limit abgelehnt');
   click({ action: 'limit-edit', id: 'l3' });
   assert.ok(/id="li-aktiv"/.test(elements.modal.innerHTML) && /Beendet/.test(elements.modal.innerHTML), 'Limit lässt sich wieder aktivieren');
+
+
+  // ---------- Einkauf aus ChatGPT-Text ----------
+  click({ action: 'tab', tab: 'heute' });
+  assert.ok(/Aus ChatGPT einfügen/.test(app()), 'Button auf dem Dashboard');
+  click({ action: 'einkauf-import' });
+  assert.ok(/id="im-text"/.test(elements.modal.innerHTML) && /Prompt für ChatGPT kopieren/.test(elements.modal.innerHTML));
+  assert.ok(/Lebensmittel, Drogerie/.test(elements.modal.innerHTML) && !/Beendet/.test(elements.modal.innerHTML.split('Prompt anzeigen')[1] || ''), 'Prompt enthält nur aktive Limits');
+  click({ action: 'import-prompt' }); await tick();
+  const clip = calls.filter((c) => c[0] === 'clipboard');
+  assert.ok(clip.length === 1 && /Betrag; Datum; Händler; Limit/.test(clip[0][1]) && /rate nicht/.test(clip[0][1]), 'Prompt wird kopiert');
+  const imFields = { '#im-text': { value: '23,45; 13.11.2026; Rewe <b>; Lebensmittel\n12,00; 13.11.2026; dm; Drogerie' }, '#im-err': { textContent: '' } };
+  const imForm = { dataset: { form: 'import-pruefen' }, querySelector: (q) => imFields[q] };
+  const subSync = (f) => { handlers.submit.forEach((h) => h({ target: f, preventDefault() {} })); return tick(); };
+  await subSync(imForm);
+  let pv = flat(elements.modal.innerHTML);
+  assert.ok(/Prüfen/.test(pv) && /2 Einkäufe, zusammen 35,45 €/.test(pv), 'Vorschau mit Summe: ' + pv.slice(0, 200));
+  assert.ok(/Rewe &lt;b&gt;/.test(pv) && !/Rewe <b>/.test(pv), 'Händler wird maskiert');
+  assert.ok(/data-action="import-buchen"/.test(pv), 'Buchen erst nach Vorschau');
+  assert.ok(!calls.some((c) => c[0] === 'einkaeufe' && Array.isArray(c[2])), 'bis zur Bestätigung wird nichts gespeichert');
+  // Buchen: ein Aufruf, feste IDs, Wiederholung nach Netzfehler nutzt dieselben IDs
+  const batch = () => calls.filter((c) => c[0] === 'einkaeufe' && c[1] === 'upsert' && Array.isArray(c[2]));
+  failOps.add('einkaeufe.upsert');
+  click({ action: 'import-buchen' }); await tick(); await tick();
+  click({ action: 'import-buchen' }); await tick(); await tick(); await tick();
+  assert.strictEqual(batch().length, 2, 'zwei Versuche (erster scheitert)');
+  const ids1 = batch()[0][2].map((r) => r.id), ids2 = batch()[1][2].map((r) => r.id);
+  assert.strictEqual(JSON.stringify(ids1), JSON.stringify(ids2), 'Wiederholung nutzt dieselben IDs: keine Doppelbuchung');
+  assert.ok(ids1.every((i) => UUID.test(i)) && ids1.length === 2, 'UUIDs, eine Anweisung für alle Zeilen');
+  assert.strictEqual(JSON.stringify(batch()[1][2].map((r) => [r.limit_id, r.betrag, r.datum, r.notiz])), JSON.stringify([['l1', 23.45, '2026-11-13', 'Rewe <b>'], ['l2', 12, '2026-11-13', 'dm']]));
+  assert.ok(batch()[1][3].ignoreDuplicates === true);
+  // Fehlerhafter Text: keine Buchung möglich, Fehler sichtbar
+  click({ action: 'einkauf-import' });
+  imFields['#im-text'].value = '5; 30.02.2026; x; Lebensmittel\n7; 13.11.2026; y; Tanken';
+  const nb = batch().length;
+  await subSync(imForm);
+  pv = flat(elements.modal.innerHTML);
+  assert.ok(/Datum fehlt oder ist ungültig/.test(pv) && /gibt es nicht/.test(pv), 'Fehler je Zeile');
+  assert.ok(!/data-action="import-buchen"/.test(pv), 'mit Fehlern kein Buchen-Button');
+  click({ action: 'import-buchen' }); await tick();
+  assert.strictEqual(batch().length, nb, 'auch direkter Aufruf bucht bei Fehlern nichts');
+  // ChatGPT unsicher
+  click({ action: 'einkauf-import' });
+  imFields['#im-text'].value = 'FRAGE: Betrag nicht lesbar'; imFields['#im-err'].textContent = '';
+  await subSync(imForm);
+  assert.ok(/unsicher/.test(imFields['#im-err'].textContent), 'FRAGE: wird abgefangen');
+  imFields['#im-text'].value = '   '; await subSync(imForm);
+  assert.ok(/Kein Eintrag/.test(imFields['#im-err'].textContent), 'leere Eingabe');
+  click({ action: 'close-modal' });
 
   // Tabellen fehlen noch (Frontend vor Datenbank-Update): Rest der App bleibt benutzbar
   click({ action: 'close-modal' });

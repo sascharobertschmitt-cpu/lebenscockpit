@@ -525,7 +525,7 @@
         '<div class="limit-sub ' + (r.over ? 'overdue' : '') + '">' + (r.over ? eur(-r.rest) + ' über dem Limit' : 'noch ' + eur(r.rest) + (r.proTag > 0 && st.daysLeft > 1 ? ' · rund ' + eur(r.proTag) + ' pro Tag' : '')) + '</div></div>';
     });
     h += '<button class="primary" data-action="einkauf-neu">Einkauf erfassen</button>' +
-      '<div class="grid2 tight"><button data-action="einkauf-liste">Einkäufe und Belege</button><button data-action="limits">Limits ändern</button></div></section>';
+      '<button data-action="einkauf-import">Aus ChatGPT einfügen</button><div class="grid2 tight"><button data-action="einkauf-liste">Einkäufe und Belege</button><button data-action="limits">Limits ändern</button></div></section>';
     return h;
   }
 
@@ -699,6 +699,65 @@
     closeModal(); await loadAll(); render(); toast('Gespeichert');
   }
 
+  // ---------- Einkäufe aus ChatGPT-Text ----------
+  // Luna lädt den Bon in ChatGPT hoch. ChatGPT gibt je Einkauf eine Zeile `Betrag; Datum; Händler; Limit` aus,
+  // die hier eingefügt, streng geprüft und erst nach Bestätigung gebucht wird.
+  function chatgptPrompt() {
+    var namen = aktiveLimits().map(function (l) { return l.name; }).join(', ') || 'Lebensmittel';
+    return 'Lies das Foto vom Kassenbon. Gib mir NUR eine einzige Zeile aus, ohne Erklärung, genau in diesem Format:\n' +
+      'Betrag; Datum; Händler; Limit\n' +
+      'Betrag = Gesamtsumme in Euro mit Komma (zum Beispiel 23,45). Datum = Kaufdatum als TT.MM.JJJJ. Händler = Name des Geschäfts. ' +
+      'Limit = genau eines von: ' + namen + '.\n' +
+      'Mehrere Bons: eine Zeile je Bon. Wenn du etwas nicht sicher lesen kannst, schreibe stattdessen in die Zeile FRAGE: und was unklar ist, und rate nicht.';
+  }
+  function modalImport(text) {
+    S.importRows = null;
+    openModal('<h1>Aus ChatGPT einfügen</h1>' +
+      '<p class="note">1. Bon in ChatGPT hochladen und den Prompt senden. 2. Die Antwort hier einfügen. 3. Prüfen und buchen.</p>' +
+      '<button type="button" data-action="import-prompt">Prompt für ChatGPT kopieren</button>' +
+      '<details class="dash-fold"><summary>Prompt anzeigen</summary><div class="dash-fold-body"><textarea readonly rows="6" aria-label="Prompt für ChatGPT">' + esc(chatgptPrompt()) + '</textarea></div></details>' +
+      '<form data-form="import-pruefen"><label for="im-text">Antwort von ChatGPT</label>' +
+      '<textarea id="im-text" rows="6" placeholder="23,45; 13.11.2026; Rewe; Lebensmittel" autocapitalize="off" spellcheck="false">' + esc(text || '') + '</textarea>' +
+      '<p class="note">Eine Zeile je Einkauf: Betrag; Datum; Händler; Limit. Nichts wird gebucht, bevor du es bestätigst.</p>' +
+      '<div class="err" id="im-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Prüfen</button></div></form>');
+  }
+  function importPruefen(form) {
+    var txt = form.querySelector('#im-text').value;
+    var err = form.querySelector('#im-err');
+    err.textContent = '';
+    if (/FRAGE:/i.test(txt)) { err.textContent = 'ChatGPT war unsicher (FRAGE:). Klär das dort und füge die korrigierte Zeile ein.'; return; }
+    var res = L.parseEinkaufText(txt, S.limits, S.kaeufe, todayD());
+    if (res.errors.length && !res.rows.length) { err.textContent = res.errors[0] + '.'; return; }
+    S.importText = txt;
+    S.importRows = res.rows.map(function (r) { r.id = newRequestId(); return r; });   // feste IDs: Wiederholung nach Netzfehler bucht nichts doppelt
+    S.importOk = res.ok;
+    var rows = res.rows.map(function (r) {
+      var msgs = r.errors.map(function (m) { return '<div class="err">' + esc(m) + '</div>'; }).join('') + r.warnings.map(function (m) { return '<div class="warn-line">' + esc(m) + '</div>'; }).join('');
+      return '<div class="row"><div class="main"><div class="t">' + (r.limitName ? esc(r.limitName) : 'Zeile ' + r.zeile) + (r.notiz ? ' · ' + esc(r.notiz) : '') + '</div>' +
+        '<div class="s">' + (r.datum ? esc(fmtD(L.parseISO(r.datum))) : esc(r.text)) + '</div>' + msgs + '</div>' +
+        '<div class="amt">' + (r.betrag != null ? eur(r.betrag) : '') + '</div></div>';
+    }).join('');
+    var sum = res.rows.reduce(function (a, r) { return a + (r.betrag || 0); }, 0);
+    openModal('<h1>Prüfen</h1>' +
+      (res.ok ? '<p class="note">' + res.rows.length + (res.rows.length === 1 ? ' Einkauf' : ' Einkäufe') + ', zusammen ' + eur(L.round2(sum)) + '. Stimmt alles?</p>' : '<p class="note">Es gibt Fehler. Korrigiere den Text, es wird nichts gebucht, solange eine Zeile fehlerhaft ist.</p>') +
+      '<div class="card flat">' + rows + '</div>' +
+      '<div class="actions"><button type="button" data-action="import-zurueck">Text ändern</button>' +
+      (res.ok ? '<button class="primary" data-action="import-buchen">Buchen</button>' : '') + '</div>');
+  }
+  async function importBuchen() {
+    if (!S.importRows || !S.importOk) return;
+    var rows = S.importRows.map(function (r) { return { id: r.id, limit_id: r.limit_id, datum: r.datum, betrag: r.betrag, notiz: r.notiz }; });
+    var r = await sb.from('einkaeufe').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });   // eine Anweisung: alles oder nichts
+    if (r.error) throw r.error;
+    var n = rows.length;
+    S.importRows = null; S.importText = '';
+    closeModal(); await loadAll(); render(); toast(n + (n === 1 ? ' Einkauf gebucht' : ' Einkäufe gebucht'));
+  }
+  async function kopiereText(txt) {
+    try { await navigator.clipboard.writeText(txt); toast('Prompt kopiert'); }
+    catch (e) { toast('Kopieren nicht möglich. Öffne „Prompt anzeigen“ und kopiere von Hand.'); }
+  }
+
   // ---------- Ereignisse ----------
   document.addEventListener('click', function (e) {
     if (e.target === $modal) { closeModal(); return; }
@@ -715,6 +774,10 @@
     else if (a === 'einkauf-neu') modalEinkauf(null);
     else if (a === 'einkauf-edit') modalEinkauf(id);
     else if (a === 'einkauf-liste') modalEinkaeufe();
+    else if (a === 'einkauf-import') modalImport('');
+    else if (a === 'import-zurueck') modalImport(S.importText || '');
+    else if (a === 'import-buchen') run(importBuchen);
+    else if (a === 'import-prompt') run(function () { return kopiereText(chatgptPrompt()); });
     else if (a === 'beleg') run(function () { return showBeleg(id); });
     else if (a === 'einkauf-del') { if (confirm('Diesen Einkauf samt Foto wirklich löschen?')) run(function () { return deleteEinkauf(id); }); }
     else if (a === 'limits') modalLimits();
@@ -762,6 +825,7 @@
     else if (k === 'aufgabe') run(function () { return saveAufgabe(f); });
     else if (k === 'einkauf') run(function () { return saveEinkauf(f); });
     else if (k === 'limit') run(function () { return saveLimit(f); });
+    else if (k === 'import-pruefen') importPruefen(f);
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && S.user && !$modal.innerHTML && !S.busy) reload();

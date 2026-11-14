@@ -218,3 +218,8 @@ nav svg { flex: none; width: 23px; height: 23px; fill: none; stroke: currentColo
 img.beleg { display: block; width: 100%; max-height: 62vh; object-fit: contain; border-radius: 14px; background: var(--elevated); }
 button.mini { flex-shrink: 0; width: auto; min-height: 36px; padding: 6px 12px; margin-left: 10px; font-size: 12.5px; }
 @media (prefers-reduced-motion: reduce) { .meter > span { transition: none; } }
+
+.einkauf > button { margin-top: 11px; }
+textarea { width: 100%; min-height: 120px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--elevated); color: var(--text); font: 500 16px/1.5 var(--font); resize: vertical; }
+textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.warn-line { margin-top: 4px; font-size: 12px; color: var(--warn); }

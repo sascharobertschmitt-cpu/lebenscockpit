@@ -231,9 +231,66 @@
     };
   }
 
+  // Text aus ChatGPT: je Zeile `Betrag; Datum; Haendler; Limit` (auch Tab oder Tabellen-Striche, Code-Block-Zaeune werden ignoriert).
+  // Nichts wird geraten: Jede Zeile wird streng geprueft, und das Ergebnis enthaelt Fehler und Warnungen je Zeile.
+  const fold = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
+  function parseDatum(t) {
+    let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+    let y, mo, d;
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else if ((m = /^(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})$/.exec(t))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (m[3].length === 2) y += 2000; }
+    else return null;
+    const dt = new Date(y, mo - 1, d);
+    return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null;
+  }
+  function parseEinkaufText(text, limits, kaeufe, today) {
+    const active = (limits || []).filter((l) => l.aktiv);
+    const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !/^```/.test(l) && !/^#/.test(l) && !/^[|\-:\s]+$/.test(l));
+    const rows = [], seen = new Set();
+    let n = 0;
+    for (const raw of lines) {
+      const cells = raw.replace(/^\||\|$/g, '').split(/\s*[;\t|]\s*/).map((c) => c.trim());
+      if (/^betrag/i.test(cells[0])) continue;                       // Kopfzeile
+      n++;
+      const r = { zeile: n, text: raw, errors: [], warnings: [] };
+      const b = parseBetrag(cells[0]);
+      if (!isFinite(b) || b <= 0) r.errors.push('Betrag fehlt oder ist keine Zahl über 0');
+      else if (b > 100000) r.errors.push('Betrag ist zu groß');
+      else r.betrag = round2(b);
+      const d = cells[1] ? parseDatum(cells[1]) : null;
+      if (!d) r.errors.push('Datum fehlt oder ist ungültig (erwartet 13.11.2026 oder 2026-11-13)');
+      else if (daysBetween(d, today) > 365 || daysBetween(today, d) > 7) r.errors.push('Datum liegt zu weit in Vergangenheit oder Zukunft');
+      else r.datum = iso(d);
+      r.notiz = (cells[2] || '').trim() || null;
+      if (r.notiz && r.notiz.length > 200) r.errors.push('Händler/Notiz ist länger als 200 Zeichen');
+      const want = fold(cells[3]);
+      let lim = null;
+      if (want) {
+        const exact = active.filter((l) => fold(l.name) === want);
+        const part = exact.length ? exact : active.filter((l) => fold(l.name).includes(want) || want.includes(fold(l.name)));
+        if (part.length === 1) lim = part[0];
+        else r.errors.push(part.length ? 'Limit „' + cells[3] + '“ ist nicht eindeutig' : 'Limit „' + cells[3] + '“ gibt es nicht (aktiv: ' + (active.map((l) => l.name).join(', ') || 'keins') + ')');
+      } else if (active.length === 1) lim = active[0];
+      else r.errors.push('Limit fehlt (aktiv: ' + (active.map((l) => l.name).join(', ') || 'keins') + ')');
+      if (lim) { r.limit_id = lim.id; r.limitName = lim.name; }
+      if (cells.length > 4) r.warnings.push('Zusätzliche Spalten wurden ignoriert');
+      if (r.betrag != null && r.datum && r.limit_id) {
+        const key = r.limit_id + '|' + r.datum + '|' + cents(r.betrag);
+        const bekannt = (kaeufe || []).some((k) => k.limit_id === r.limit_id && String(k.datum).slice(0, 10) === r.datum && cents(k.betrag) === cents(r.betrag));
+        if (bekannt || seen.has(key)) r.warnings.push('Sieht doppelt aus: gleicher Betrag, Tag und Limit sind schon erfasst');
+        seen.add(key);
+      }
+      rows.push(r);
+    }
+    const errors = [];
+    if (!rows.length) errors.push('Kein Eintrag gefunden');
+    if (rows.length > 30) errors.push('Zu viele Zeilen (höchstens 30 auf einmal)');
+    return { rows, errors, ok: !errors.length && rows.every((r) => !r.errors.length) };
+  }
+
   const api = {
     iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
-    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, weekStart, weekEnd, einkaufStatus
+    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, weekStart, weekEnd, einkaufStatus, parseEinkaufText, parseDatum
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Logic = api;

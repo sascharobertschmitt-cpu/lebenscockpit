@@ -175,3 +175,40 @@ console.log('Alle Tests bestanden');
   assert.strictEqual(L.einkaufStatus([limits[1]], [{ limit_id: 'l2', datum: '2026-11-13', betrag: 20 }], new Date(2026, 10, 13)).rows[0].over, false);
   console.log('Wocheneinkauf-Logik ok');
 }
+
+// ---------- Einkauf aus ChatGPT-Text ----------
+{
+  const T = new Date(2026, 10, 13);
+  const lims = [{ id: 'l1', name: 'Lebensmittel', aktiv: true }, { id: 'l2', name: 'Drogerie', aktiv: true }, { id: 'l3', name: 'Alt', aktiv: false }];
+  const ex = [{ limit_id: 'l1', datum: '2026-11-10', betrag: '30.30' }];
+  const P = (txt, l, k) => L.parseEinkaufText(txt, l || lims, k || [], T);
+  let r = P('23,45; 13.11.2026; Rewe; Lebensmittel');
+  assert.ok(r.ok && r.rows.length === 1);
+  assert.deepStrictEqual([r.rows[0].betrag, r.rows[0].datum, r.rows[0].notiz, r.rows[0].limit_id], [23.45, '2026-11-13', 'Rewe', 'l1']);
+  // verschiedene Formate, Code-Block, Kopfzeile, Tabelle, Gross-/Kleinschreibung, Euro-Zeichen, Punkt als Dezimaltrenner
+  r = P('```\nBetrag; Datum; Händler; Limit\n€ 1.234,50; 2026-11-12; dm; drogerie\n7.9;5.11.26;Bäcker;LEBENSMITTEL\n```');
+  assert.ok(r.ok, JSON.stringify(r.rows.map((x) => x.errors)));
+  assert.deepStrictEqual(r.rows.map((x) => [x.betrag, x.datum, x.limit_id]), [[1234.5, '2026-11-12', 'l2'], [7.9, '2026-11-05', 'l1']]);
+  r = P('| 12,00 | 13.11.2026 | Edeka | Lebensmittel |\n|---|---|---|---|');
+  assert.ok(r.ok && r.rows.length === 1 && r.rows[0].notiz === 'Edeka', 'Markdown-Tabelle');
+  r = P('9,99\t13.11.2026\tAldi\tLebens');
+  assert.ok(r.ok && r.rows[0].limit_id === 'l1', 'Tab-getrennt, eindeutiger Teilname');
+  // Ein einziges aktives Limit darf fehlen, sonst ist es ein Fehler
+  assert.ok(P('5;13.11.2026;x', [lims[0]]).ok, 'ein aktives Limit: Spalte darf fehlen');
+  assert.ok(!P('5;13.11.2026;x').ok && /Limit fehlt/.test(P('5;13.11.2026;x').rows[0].errors[0]), 'mehrere Limits: Limit Pflicht');
+  // Fehler werden nicht geraten
+  for (const [t, re] of [['abc;13.11.2026;x;Lebensmittel', /Betrag/], ['0;13.11.2026;x;Lebensmittel', /Betrag/], ['5;30.02.2026;x;Lebensmittel', /Datum/], ['5;;x;Lebensmittel', /Datum/], ['5;13.11.2024;x;Lebensmittel', /zu weit/], ['5;13.11.2027;x;Lebensmittel', /zu weit/], ['5;13.11.2026;x;Alt', /gibt es nicht/], ['5;13.11.2026;x;Tanken', /gibt es nicht/], ['100001;13.11.2026;x;Lebensmittel', /zu groß/], ['5;13.11.2026;' + 'x'.repeat(201) + ';Lebensmittel', /200/]]) {
+    const q = P(t); assert.ok(!q.ok && re.test(q.rows[0].errors.join(' ')), t.slice(0, 30) + ' -> ' + JSON.stringify(q.rows[0].errors));
+  }
+  assert.ok(!P('5;13.11.2026;x;Lebensmittel\nkaputt').ok, 'eine fehlerhafte Zeile verhindert den ganzen Import');
+  assert.ok(!P('').ok && /Kein Eintrag/.test(P('').errors[0]) && !P('   \n\n').ok, 'leere Eingabe');
+  assert.ok(!P(Array(31).fill('1;13.11.2026;x;Lebensmittel').join('\n')).ok, 'mehr als 30 Zeilen');
+  // Doppelte erkennen (Warnung, kein Fehler)
+  r = P('30,30; 10.11.2026; Rewe; Lebensmittel', lims, ex);
+  assert.ok(r.ok && /doppelt/.test(r.rows[0].warnings[0]), 'schon erfasster Einkauf wird markiert');
+  r = P('4;13.11.2026;a;Lebensmittel\n4;13.11.2026;b;Lebensmittel');
+  assert.ok(r.ok && !r.rows[0].warnings.length && /doppelt/.test(r.rows[1].warnings[0]), 'doppelte Zeile im selben Text');
+  // Sonderzeichen im Text werden nicht interpretiert (HTML-Maskierung passiert in der App)
+  assert.strictEqual(P('5;13.11.2026;<b>x</b>;Lebensmittel').rows[0].notiz, '<b>x</b>');
+  console.log('Einkauf-Textimport-Logik ok');
+}
