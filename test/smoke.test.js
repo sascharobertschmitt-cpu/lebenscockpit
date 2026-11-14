@@ -54,6 +54,10 @@ sandbox.supabase = {
   createClient() {
     return {
       from,
+      rpc: async (name, args) => {
+        calls.push(['rpc', name, args]);
+        return { data: null, error: null };
+      },
       auth: {
         getSession: async () => ({ data: { session: { user } } }),
         onAuthStateChange() {}, signOut: async () => ({}), signInWithPassword: async () => ({ data: { user }, error: null })
@@ -103,6 +107,10 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   click({ action: 'tab', tab: 'aufgaben' });
   assert.ok(/Überfällig|Heute/.test(app()));
   assert.ok(/&lt;b&gt;x&lt;\/b&gt;/.test(app()));
+
+  // The app uses atomic RPCs, not separate task or finance writes.
+  assert.ok(/rpc\\('set_task_completion'/.test(fs.readFileSync(path.join(root, 'app.js'), 'utf8')));
+  assert.ok(/rpc\\('save_account_reconciliation'/.test(fs.readFileSync(path.join(root, 'app.js'), 'utf8')));
 
   // Mehr
   click({ action: 'tab', tab: 'mehr' });
