@@ -105,8 +105,8 @@
   var LABELS = { heute: 'Heute', geld: 'Geld', aufgaben: 'Aufgaben', mehr: 'Mehr' };
 
   function nav() {
-    return '<nav>' + Object.keys(LABELS).map(function (k) {
-      return '<button class="' + (S.tab === k ? 'on' : '') + '" data-action="tab" data-tab="' + k + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[k] + '</svg>' + LABELS[k] + '</button>';
+    return '<nav aria-label="Hauptnavigation">' + Object.keys(LABELS).map(function (k) {
+      return '<button type="button" class="' + (S.tab === k ? 'on' : '') + '" aria-current="' + (S.tab === k ? 'page' : 'false') + '" data-action="tab" data-tab="' + k + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[k] + '</svg>' + LABELS[k] + '</button>';
     }).join('') + '</nav>';
   }
 
@@ -280,7 +280,7 @@
   }
 
   // ---------- Fenster ----------
-  function openModal(html) { $modal.innerHTML = '<div class="sheet">' + html + '</div>'; }
+  function openModal(html) { $modal.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + html + '</div>'; }
   function closeModal() { $modal.innerHTML = ''; }
 
   function modalAbgleich() {
