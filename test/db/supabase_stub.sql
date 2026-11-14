@@ -30,3 +30,19 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 -- weil anon die Funktion dann nie bekaeme und ein fehlendes REVOKE unentdeckt bliebe.
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+
+-- Storage-Nachbau (Spalten und Besitzer wie in Produktion, 14.11.2026): objects gehoert supabase_storage_admin,
+-- RLS aktiv, ohne Policies. Nur die fuer die Tests relevanten Spalten.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='supabase_storage_admin') THEN CREATE ROLE supabase_storage_admin NOLOGIN; END IF;
+END $$;
+CREATE SCHEMA IF NOT EXISTS storage;
+GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+CREATE TABLE storage.buckets (
+  id text PRIMARY KEY, name text NOT NULL, owner uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
+  public boolean DEFAULT false, file_size_limit bigint, allowed_mime_types text[]);
+CREATE TABLE storage.objects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id),
+  name text, owner uuid, created_at timestamptz DEFAULT now(), metadata jsonb);
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON storage.buckets, storage.objects TO anon, authenticated, service_role;

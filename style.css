@@ -200,3 +200,21 @@ nav svg { flex: none; width: 23px; height: 23px; fill: none; stroke: currentColo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Wocheneinkauf ---------- */
+.einkauf h2 { margin: 0 0 4px; font-size: 19px; }
+.einkauf .restbudget-total { margin: 12px 0 14px; }
+.limit-row { padding: 10px 0 12px; border-bottom: 1px solid var(--hairline); }
+.limit-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.limit-top b { min-width: 0; overflow-wrap: anywhere; }
+.limit-top span { flex-shrink: 0; color: var(--muted); }
+.limit-top span.money-negative { color: var(--neg); }
+.limit-sub { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.meter { height: 10px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: var(--elevated); border: 1px solid var(--hairline); }
+.meter > span { display: block; height: 100%; border-radius: 99px; background: var(--ok); transition: width .3s ease; }
+.meter.is-near > span { background: var(--warn); }
+.meter.is-over > span { background: var(--danger); }
+.einkauf .grid2.tight { margin: 11px 0 0; }
+img.beleg { display: block; width: 100%; max-height: 62vh; object-fit: contain; border-radius: 14px; background: var(--elevated); }
+button.mini { flex-shrink: 0; width: auto; min-height: 36px; padding: 6px 12px; margin-left: 10px; font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { .meter > span { transition: none; } }

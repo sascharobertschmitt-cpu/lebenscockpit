@@ -203,9 +203,37 @@
     return d;
   }
 
+  // ---------- Wocheneinkauf ----------
+  // Woche = Montag bis Sonntag in lokaler Zeit. Rechnet in Cent, damit 0,10 + 0,20 genau 0,30 ergibt.
+  const weekStart = (d) => { const x = day0(d); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - ((x.getDay() + 6) % 7)); };
+  const weekEnd = (d) => { const s = weekStart(d); return new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6); };
+  const cents = (x) => Math.round(num(x) * 100);
+  function einkaufStatus(limits, kaeufe, today) {
+    const start = weekStart(today), end = weekEnd(today);
+    const a = iso(start), b = iso(end);
+    const inWeek = (k) => { const d = String(k.datum).slice(0, 10); return d >= a && d <= b; };
+    const daysLeft = daysBetween(today, end) + 1;
+    let spentC = 0, limitC = 0;
+    const rows = (limits || []).filter((l) => l.aktiv).map((l) => {
+      const mine = (kaeufe || []).filter((k) => k.limit_id === l.id && inWeek(k));
+      const sp = mine.reduce((acc, k) => acc + cents(k.betrag), 0);
+      const lim = cents(l.wochenlimit);
+      spentC += sp; limitC += lim;
+      return {
+        limit: l, count: mine.length, spent: sp / 100, limitBetrag: lim / 100, rest: (lim - sp) / 100,
+        pct: lim > 0 ? Math.min(100, Math.round(sp / lim * 100)) : 0, over: sp > lim,
+        proTag: lim - sp > 0 ? Math.floor((lim - sp) / daysLeft) / 100 : 0
+      };
+    });
+    return {
+      start, end, daysLeft, rows,
+      total: { spent: spentC / 100, limit: limitC / 100, rest: (limitC - spentC) / 100, over: spentC > limitC, pct: limitC > 0 ? Math.min(100, Math.round(spentC / limitC * 100)) : 0 }
+    };
+  }
+
   const api = {
     iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
-    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2
+    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, weekStart, weekEnd, einkaufStatus
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Logic = api;

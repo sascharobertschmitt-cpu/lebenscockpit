@@ -36,7 +36,7 @@ for (const v of versions) assert.ok(PROD_APPLIED.has(v) || v > PROD_LAST_APPLIED
 for (const f of files.filter((x) => !PROD_APPLIED.has(x.slice(0, 14)))) {
   const sql = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\$\$[\s\S]*?\$\$/g, '$$$$'); // Funktionskoerper ausblenden
   assert.doesNotMatch(sql, /\bDROP\s+(TABLE|SCHEMA)\b|\bTRUNCATE\s+(TABLE\s+)?public\./i, f + ' enthaelt destruktives DDL');
-  assert.doesNotMatch(sql, /^\s*(INSERT|UPDATE|DELETE)\b/im, f + ' veraendert Daten');
+  if (!/_belege_storage\.sql$/.test(f)) assert.doesNotMatch(sql, /^\s*(INSERT|UPDATE|DELETE)\b/im, f + ' veraendert Daten'); // einzige Ausnahme: Bucket-Anlage
 }
 const down = fs.readdirSync(path.join(root, 'supabase/rollback')).map((f) => f.slice(0, 14));
 for (const v of versions.filter((x) => !PROD_APPLIED.has(x))) assert.ok(down.includes(v), 'Rollback-Skript fehlt fuer ' + v);
@@ -44,4 +44,15 @@ const sec = fs.readFileSync(path.join(dir, '20261114200200_revoke_truncate_from_
 assert.match(sec, /REVOKE UPDATE, DELETE ON public\.bankumsaetze FROM authenticated/i);
 assert.match(sec, /REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon/i);
 assert.match(fs.readFileSync(path.join(dir, '20261114200300_protect_payment_history.sql'), 'utf8'), /ON DELETE RESTRICT/i);
+// Wocheneinkauf: RLS, privater Bucket, keine oeffentlichen Rechte
+const ek = fs.readFileSync(path.join(dir, '20261115100000_einkauf_limits_und_einkaeufe.sql'), 'utf8');
+assert.match(ek, /ALTER TABLE public\.einkauf_limits ENABLE ROW LEVEL SECURITY/i);
+assert.match(ek, /ALTER TABLE public\.einkaeufe ENABLE ROW LEVEL SECURITY/i);
+assert.match(ek, /REVOKE ALL ON public\.einkauf_limits, public\.einkaeufe FROM PUBLIC, anon/i);
+assert.match(ek, /ON DELETE RESTRICT/i);
+const bel = fs.readFileSync(path.join(dir, '20261115100100_belege_storage.sql'), 'utf8');
+assert.match(bel, /VALUES \('belege', 'belege', false,/i, 'Bucket muss privat sein');
+assert.doesNotMatch(bel, /public\s*=\s*true|TO anon|TO public/i, 'Bucket darf nicht oeffentlich sein');
+assert.doesNotMatch(bel, /FOR UPDATE/i, 'Belege sind unveraenderlich');
+assert.match(bel, /ist_mitglied/i);
 console.log('SQL contract checks passed (static, not a database test)');

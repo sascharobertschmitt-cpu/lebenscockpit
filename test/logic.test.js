@@ -122,3 +122,56 @@ console.log('Alle Tests bestanden');
   assert.strictEqual(lL.gesamt, Math.round((lL.verfuegbar + 300) * 100) / 100);
   console.log('Luna-Gegenrechnung ok');
 }
+
+// ---------- Wocheneinkauf ----------
+{
+  const ymd = (d) => L.iso(d);
+  // Wochengrenzen: Montag bis Sonntag, auch ueber Jahreswechsel und Zeitumstellung
+  assert.strictEqual(ymd(L.weekStart(new Date(2026, 10, 13))), '2026-11-09', 'Freitag -> Montag');
+  assert.strictEqual(ymd(L.weekStart(new Date(2026, 10, 9))), '2026-11-09', 'Montag bleibt Montag');
+  assert.strictEqual(ymd(L.weekStart(new Date(2026, 10, 15))), '2026-11-09', 'Sonntag gehoert zur Woche davor');
+  assert.strictEqual(ymd(L.weekEnd(new Date(2026, 10, 13))), '2026-11-15');
+  assert.strictEqual(ymd(L.weekStart(new Date(2027, 0, 1))), '2026-12-28', 'Jahreswechsel');
+  assert.strictEqual(ymd(L.weekEnd(new Date(2026, 11, 30))), '2027-01-03', 'Jahreswechsel Ende');
+  assert.strictEqual(ymd(L.weekStart(new Date(2026, 9, 25))), '2026-10-19', 'Zeitumstellung 25.10.2026 (Sonntag)');
+  assert.strictEqual(ymd(L.weekEnd(new Date(2026, 9, 21))), '2026-10-25', 'Woche mit Zeitumstellung endet am Sonntag');
+
+  const limits = [
+    { id: 'l1', name: 'Lebensmittel', wochenlimit: '80.00', aktiv: true },
+    { id: 'l2', name: 'Drogerie', wochenlimit: 20, aktiv: true },
+    { id: 'l3', name: 'Alt', wochenlimit: 50, aktiv: false }
+  ];
+  const kaeufe = [
+    { limit_id: 'l1', datum: '2026-11-09', betrag: '0.10' },   // Montag, zaehlt
+    { limit_id: 'l1', datum: '2026-11-12', betrag: '0.20' },
+    { limit_id: 'l1', datum: '2026-11-15', betrag: '30.00' },  // Sonntag, zaehlt
+    { limit_id: 'l1', datum: '2026-11-08', betrag: '99.00' },  // Vorwoche, zaehlt nicht
+    { limit_id: 'l1', datum: '2026-11-16', betrag: '99.00' },  // Folgewoche, zaehlt nicht
+    { limit_id: 'l2', datum: '2026-11-10T08:00:00Z', betrag: 25 }, // ueber Limit
+    { limit_id: 'l3', datum: '2026-11-10', betrag: 10 }        // inaktives Limit: nicht im Ueberblick
+  ];
+  const st = L.einkaufStatus(limits, kaeufe, new Date(2026, 10, 13));
+  assert.strictEqual(st.rows.length, 2, 'nur aktive Limits');
+  const r1 = st.rows[0], r2 = st.rows[1];
+  assert.strictEqual(r1.spent, 30.3, 'Cent-genau: 0,10 + 0,20 + 30');
+  assert.strictEqual(r1.rest, 49.7);
+  assert.strictEqual(r1.pct, 38);
+  assert.strictEqual(r1.over, false);
+  assert.strictEqual(r1.count, 3);
+  assert.strictEqual(st.daysLeft, 3, 'Fr, Sa, So');
+  assert.strictEqual(r1.proTag, 16.56, 'Rest pro verbleibendem Tag, abgerundet');
+  assert.strictEqual(r2.over, true, 'Limit ueberschritten');
+  assert.strictEqual(r2.rest, -5);
+  assert.strictEqual(r2.pct, 100, 'Balken bei 100 % gedeckelt');
+  assert.strictEqual(r2.proTag, 0, 'kein Tagesbudget bei ueberschrittenem Limit');
+  assert.strictEqual(st.total.spent, 55.3);
+  assert.strictEqual(st.total.limit, 100);
+  assert.strictEqual(st.total.rest, 44.7);
+  // leere und fehlende Daten
+  assert.strictEqual(L.einkaufStatus([], [], new Date(2026, 10, 13)).rows.length, 0);
+  assert.strictEqual(L.einkaufStatus(undefined, undefined, new Date(2026, 10, 13)).total.limit, 0);
+  assert.strictEqual(L.einkaufStatus(limits, [], new Date(2026, 10, 13)).rows[0].spent, 0);
+  // Genau am Limit ist nicht ueber dem Limit
+  assert.strictEqual(L.einkaufStatus([limits[1]], [{ limit_id: 'l2', datum: '2026-11-13', betrag: 20 }], new Date(2026, 10, 13)).rows[0].over, false);
+  console.log('Wocheneinkauf-Logik ok');
+}

@@ -11,7 +11,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], showDone: false, folds: {}, loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], limits: [], kaeufe: [], einkaufFehler: false, showDone: false, folds: {}, loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
@@ -58,6 +58,21 @@
     S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.aufgaben = r[4].data;
     S.staende = r[3].data.concat(r[5].data).sort(function (a, b) { return String(b.erfasst_am).localeCompare(String(a.erfasst_am)); });
     S.loaded = true;
+    await loadEinkauf();
+  }
+  // Wocheneinkauf liegt in eigenen Tabellen. Fehlen sie (Datenbank-Update noch nicht eingespielt), bleibt der Rest der App voll nutzbar.
+  async function loadEinkauf() {
+    try {
+      var since = L.iso(new Date(L.weekStart(todayD()).getTime() - 49 * 86400000));
+      var r = await Promise.all([
+        sb.from('einkauf_limits').select('*').order('name', { ascending: true }),
+        sb.from('einkaeufe').select('*').gte('datum', since).order('datum', { ascending: false }).order('erfasst_am', { ascending: false })
+      ]);
+      if (r[0].error || r[1].error) throw (r[0].error || r[1].error);
+      S.limits = r[0].data || []; S.kaeufe = r[1].data || []; S.einkaufFehler = false;
+    } catch (e) {
+      S.limits = []; S.kaeufe = []; S.einkaufFehler = true;
+    }
   }
   async function reload() {
     try { await loadAll(); } catch (e) { fail(e); }
@@ -189,6 +204,7 @@
         '<div class="sm">Gemeinsam mit Luna: <b class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</b><br>Rechnerisch inklusive Dispo, noch nicht alle Verpflichtungen erfasst.</div></div>';
     }
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
+    h += einkaufCard(t);
 
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
@@ -296,8 +312,9 @@
   function viewMehr() {
     return head('Mehr', 'Version ' + VERSION) +
       '<div class="card"><div class="row"><div class="main"><div class="t">Angemeldet als</div><div class="s">' + esc(S.user.email) + '</div></div></div></div>' +
+      '<button data-action="limits">Wochenlimits verwalten</button><div class="gap"></div>' +
       '<button data-action="refresh">Daten neu laden</button><div class="gap"></div>' +
-      '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
+      '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext, aber keine Beleg-Fotos. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
       '<button class="danger" data-action="logout">Abmelden</button>';
   }
 
@@ -471,6 +488,8 @@
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
     var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data };
+    var e1 = await sb.from('einkauf_limits').select('*'), e2 = await sb.from('einkaeufe').select('*');
+    data.einkauf_limits = e1.error ? null : e1.data; data.einkaeufe = e2.error ? null : e2.data;
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -482,19 +501,223 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
 
+  // ---------- Wocheneinkauf ----------
+  function meter(pct, over, label) {
+    var cls = over ? ' is-over' : pct >= 80 ? ' is-near' : '';
+    return '<div class="meter' + cls + '" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Number(pct) + '" aria-label="' + esc(label) + '"><span style="width:' + Number(pct) + '%"></span></div>';
+  }
+  function einkaufCard(t) {
+    if (S.einkaufFehler) return '<section class="card" aria-label="Wocheneinkauf"><h2>Wocheneinkauf</h2><p class="note">Noch nicht eingerichtet. Das Datenbank-Update fehlt, die übrige App funktioniert normal.</p></section>';
+    var st = L.einkaufStatus(S.limits, S.kaeufe, t);
+    var head = '<h2>Wocheneinkauf</h2><p class="note">' + esc(fmtD(st.start)) + ' bis ' + esc(fmtD(st.end)) + ', noch ' + st.daysLeft + (st.daysLeft === 1 ? ' Tag' : ' Tage') + '</p>';
+    if (!st.rows.length) {
+      return '<section class="card" aria-label="Wocheneinkauf">' + head.replace(/<p class="note">.*<\/p>/, '') +
+        '<p class="note">Lege ein Wochenlimit an, zum Beispiel „Lebensmittel“ mit 80 Euro. Jeder erfasste Einkauf wird davon abgezogen, optional mit Foto vom Kassenzettel.</p>' +
+        '<button class="primary" data-action="limit-neu">Wochenlimit anlegen</button></section>';
+    }
+    var tot = st.total;
+    var h = '<section class="card einkauf" aria-label="Wocheneinkauf">' + head +
+      '<div class="restbudget-total"><span>Diese Woche noch übrig</span><strong class="' + (tot.over ? 'money-negative' : 'money-positive') + '">' + eur(tot.rest) + '</strong>' +
+      '<span>' + eur(tot.spent) + ' von ' + eur(tot.limit) + ' ausgegeben</span></div>';
+    st.rows.forEach(function (r) {
+      h += '<div class="limit-row"><div class="limit-top"><b>' + esc(r.limit.name) + '</b><span class="' + (r.over ? 'money-negative' : '') + '">' + eur(r.spent) + ' / ' + eur(r.limitBetrag) + '</span></div>' +
+        meter(r.pct, r.over, r.limit.name + ': ' + r.pct + ' Prozent des Wochenlimits verbraucht') +
+        '<div class="limit-sub ' + (r.over ? 'overdue' : '') + '">' + (r.over ? eur(-r.rest) + ' über dem Limit' : 'noch ' + eur(r.rest) + (r.proTag > 0 && st.daysLeft > 1 ? ' · rund ' + eur(r.proTag) + ' pro Tag' : '')) + '</div></div>';
+    });
+    h += '<button class="primary" data-action="einkauf-neu">Einkauf erfassen</button>' +
+      '<div class="grid2 tight"><button data-action="einkauf-liste">Einkäufe und Belege</button><button data-action="limits">Limits ändern</button></div></section>';
+    return h;
+  }
+
+  function aktiveLimits() { return S.limits.filter(function (l) { return l.aktiv; }); }
+  function limitName(id) { var l = S.limits.find(function (x) { return x.id === id; }); return l ? l.name : 'Unbekanntes Limit'; }
+  function validISO(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    var d = L.parseISO(v);
+    return L.iso(d) === v;
+  }
+
+  function modalEinkauf(id) {
+    var e = id ? S.kaeufe.find(function (x) { return x.id === id; }) : null;
+    if (id && !e) return;
+    var limits = e ? S.limits : aktiveLimits();
+    if (!limits.length) { modalLimit(null); return; }
+    S.einkaufId = e ? e.id : newRequestId();   // stabile ID: Wiederholung nach Netzfehler legt keinen zweiten Einkauf an
+    var sel = e ? e.limit_id : limits[0].id;
+    var opts = limits.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + (l.aktiv ? '' : ' (beendet)') + '</option>'; }).join('');
+    openModal('<h1>' + (e ? 'Einkauf bearbeiten' : 'Einkauf erfassen') + '</h1><form data-form="einkauf" data-id="' + esc(e ? e.id : '') + '">' +
+      '<label for="ek-limit">Limit</label><select id="ek-limit">' + opts + '</select>' +
+      '<label for="ek-betrag">Betrag in Euro</label><input id="ek-betrag" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 23,45" value="' + esc(e ? String(e.betrag).replace('.', ',') : '') + '" required>' +
+      '<label for="ek-datum">Datum</label><input id="ek-datum" type="date" value="' + esc(e ? String(e.datum).slice(0, 10) : L.iso(todayD())) + '" required>' +
+      '<label for="ek-notiz">Notiz (optional)</label><input id="ek-notiz" maxlength="200" placeholder="zum Beispiel Rewe" value="' + esc(e ? e.notiz || '' : '') + '">' +
+      (e ? '<p class="note">' + (e.beleg_pfad ? 'Ein Foto ist gespeichert und bleibt erhalten.' : 'Fotos lassen sich nur beim Erfassen hinzufügen.') + '</p>' :
+        '<label for="ek-foto">Foto vom Einkaufszettel oder Kassenbon (optional)</label><input id="ek-foto" type="file" accept="image/*" data-action="foto-gewaehlt"><div class="note" id="ek-fotoinfo">Das Foto wird verkleinert und privat gespeichert. Achte darauf, dass keine Kartendaten sichtbar sind.</div>') +
+      '<div class="err" id="ek-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
+    setTimeout(function () { var el = document.getElementById('ek-betrag'); if (el) el.focus(); }, 50);
+  }
+
+  // Foto verkleinern und als JPEG neu kodieren: spart Speicher, entfernt EXIF/GPS-Daten, und die Datenbank erlaubt nur JPEG.
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var max = 1600, w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) throw new Error('leer');
+          var k = Math.min(1, max / Math.max(w, h));
+          var c = document.createElement('canvas');
+          c.width = Math.round(w * k); c.height = Math.round(h * k);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          var q = 0.78;
+          (function enc() {
+            c.toBlob(function (b) {
+              if (!b) { reject(new Error('Kodierung fehlgeschlagen')); return; }
+              if (b.size > 2800000 && q > 0.4) { q -= 0.2; enc(); return; }
+              URL.revokeObjectURL(url); resolve(b);
+            }, 'image/jpeg', q);
+          })();
+        } catch (err) { URL.revokeObjectURL(url); reject(err); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Das Foto konnte nicht gelesen werden. Versuche ein anderes Foto oder lass es weg.')); };
+      img.src = url;
+    });
+  }
+
+  async function saveEinkauf(form) {
+    var err = form.querySelector('#ek-err');
+    err.textContent = '';
+    var editId = form.dataset.id || '';
+    var b = L.parseBetrag(form.querySelector('#ek-betrag').value);
+    if (!isFinite(b) || b <= 0) { err.textContent = 'Bitte gib einen Betrag größer als 0 ein.'; return; }
+    if (b > 100000) { err.textContent = 'Der Betrag ist zu groß.'; return; }
+    b = L.round2(b);
+    var d = form.querySelector('#ek-datum').value;
+    var t = todayD();
+    if (!validISO(d)) { err.textContent = 'Bitte gib ein gültiges Datum an.'; return; }
+    var dd = L.parseISO(d);
+    if (L.daysBetween(dd, t) > 365 || L.daysBetween(t, dd) > 7) { err.textContent = 'Das Datum liegt zu weit in der Vergangenheit oder Zukunft.'; return; }
+    var limitId = form.querySelector('#ek-limit').value;
+    if (!S.limits.some(function (l) { return l.id === limitId; })) { err.textContent = 'Bitte wähle ein Limit.'; return; }
+    var row = { limit_id: limitId, datum: d, betrag: b, notiz: form.querySelector('#ek-notiz').value.trim() || null };
+    if (editId) {
+      var u = await sb.from('einkaeufe').update(row).eq('id', editId);
+      if (u.error) throw u.error;
+      closeModal(); await loadAll(); render(); toast('Gespeichert');
+      return;
+    }
+    var fEl = form.querySelector('#ek-foto');
+    var file = fEl && fEl.files && fEl.files[0];
+    row.id = S.einkaufId;
+    var path = null;
+    if (file) {
+      var blob;
+      try { blob = await shrinkImage(file); } catch (e1) { err.textContent = e1.message || 'Das Foto konnte nicht verarbeitet werden.'; return; }
+      path = row.id + '.jpg';
+      var up = await sb.storage.from('belege').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      // "existiert schon" heißt: derselbe Versuch wurde bereits hochgeladen (Wiederholung), das ist in Ordnung
+      if (up.error && !/already exists|duplicate|409/i.test(String(up.error.message || '') + String(up.error.statusCode || ''))) {
+        err.textContent = 'Das Foto konnte nicht gespeichert werden. Versuche es erneut oder speichere den Einkauf ohne Foto.';
+        return;
+      }
+      row.beleg_pfad = path;
+    }
+    var r = await sb.from('einkaeufe').upsert(row, { onConflict: 'id', ignoreDuplicates: true });
+    if (r.error) {
+      if (path) { try { await sb.storage.from('belege').remove([path]); } catch (e2) { /* verwaiste Datei ist harmlos, nur Speicherplatz */ } }
+      throw r.error;
+    }
+    S.einkaufId = null;
+    closeModal(); await loadAll(); render(); toast('Einkauf gespeichert');
+  }
+
+  function modalEinkaeufe() {
+    var rows = S.kaeufe.slice(0, 60).map(function (k) {
+      return '<div class="row"><div class="main" data-action="einkauf-edit" data-id="' + esc(k.id) + '"><div class="t">' + esc(limitName(k.limit_id)) + (k.notiz ? ' · ' + esc(k.notiz) : '') + '</div>' +
+        '<div class="s">' + esc(fmtD(L.parseISO(k.datum))) + (k.beleg_pfad ? ' · Foto vorhanden' : '') + '</div></div>' +
+        '<div class="amt">' + eur(Number(k.betrag)) + '</div>' +
+        (k.beleg_pfad ? '<button class="mini" data-action="beleg" data-id="' + esc(k.id) + '" aria-label="Foto ansehen">Foto</button>' : '') +
+        '</div>';
+    }).join('');
+    openModal('<h1>Einkäufe</h1><p class="note">Die letzten 7 Wochen. Zum Ändern tippen.</p><div class="card flat">' + (rows || '<div class="empty">Noch keine Einkäufe erfasst.</div>') + '</div>' +
+      '<div class="actions"><button type="button" data-action="close-modal">Schließen</button><button class="primary" data-action="einkauf-neu">Einkauf erfassen</button></div>');
+  }
+  async function showBeleg(id) {
+    var k = S.kaeufe.find(function (x) { return x.id === id; });
+    if (!k || !k.beleg_pfad) return;
+    var r = await sb.storage.from('belege').createSignedUrl(k.beleg_pfad, 120);
+    if (r.error || !r.data || !r.data.signedUrl) throw new Error('Das Foto konnte nicht geladen werden.');
+    openModal('<h1>Beleg</h1><p class="note">' + esc(limitName(k.limit_id)) + ' · ' + esc(fmtD(L.parseISO(k.datum))) + ' · ' + eur(Number(k.betrag)) + '</p>' +
+      '<img class="beleg" alt="Foto vom Einkaufszettel" src="' + esc(r.data.signedUrl) + '">' +
+      '<div class="actions"><button type="button" data-action="einkauf-liste">Zurück</button></div><div class="gap"></div>' +
+      '<button class="danger" data-action="einkauf-del" data-id="' + esc(k.id) + '">Einkauf samt Foto löschen</button>');
+  }
+  async function deleteEinkauf(id) {
+    var k = S.kaeufe.find(function (x) { return x.id === id; });
+    if (!k) return;
+    var r = await sb.from('einkaeufe').delete().eq('id', id);
+    if (r.error) throw r.error;
+    if (k.beleg_pfad) { try { await sb.storage.from('belege').remove([k.beleg_pfad]); } catch (e) { /* Datei bleibt ggf. liegen */ } }
+    closeModal(); await loadAll(); render(); toast('Gelöscht');
+  }
+
+  function modalLimits() {
+    var rows = S.limits.map(function (l) {
+      return '<div class="row"><div class="main" data-action="limit-edit" data-id="' + esc(l.id) + '"><div class="t">' + esc(l.name) + '</div><div class="s">' + (l.aktiv ? 'aktiv' : 'beendet') + ' · pro Woche</div></div><div class="amt">' + eur(Number(l.wochenlimit)) + '</div></div>';
+    }).join('');
+    openModal('<h1>Wochenlimits</h1><p class="note">Jede Woche (Montag bis Sonntag) beginnt bei 0. Ein Limit mit Einkäufen wird beendet statt gelöscht.</p><div class="card flat">' + (rows || '<div class="empty">Noch kein Limit.</div>') + '</div>' +
+      '<div class="actions"><button type="button" data-action="close-modal">Schließen</button><button class="primary" data-action="limit-neu">Neues Limit</button></div>');
+  }
+  function modalLimit(id) {
+    var l = id ? S.limits.find(function (x) { return x.id === id; }) : null;
+    if (id && !l) return;
+    openModal('<h1>' + (l ? 'Limit ändern' : 'Neues Wochenlimit') + '</h1><form data-form="limit" data-id="' + esc(l ? l.id : '') + '">' +
+      '<label for="li-name">Name</label><input id="li-name" maxlength="60" placeholder="zum Beispiel Lebensmittel" value="' + esc(l ? l.name : '') + '" required>' +
+      '<label for="li-betrag">Limit pro Woche in Euro</label><input id="li-betrag" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 80" value="' + esc(l ? String(l.wochenlimit).replace('.', ',') : '') + '" required>' +
+      (l ? '<label class="inline"><input type="checkbox" id="li-aktiv"' + (l.aktiv ? ' checked' : '') + '> Limit ist aktiv</label>' : '') +
+      '<div class="err" id="li-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
+    setTimeout(function () { var el = document.getElementById('li-name'); if (el) el.focus(); }, 50);
+  }
+  async function saveLimit(form) {
+    var err = form.querySelector('#li-err');
+    err.textContent = '';
+    var id = form.dataset.id || '';
+    var name = form.querySelector('#li-name').value.trim();
+    if (!name || name.length > 60) { err.textContent = 'Bitte gib einen Namen mit höchstens 60 Zeichen ein.'; return; }
+    var b = L.parseBetrag(form.querySelector('#li-betrag').value);
+    if (!isFinite(b) || b <= 0 || b > 100000) { err.textContent = 'Bitte gib ein Limit größer als 0 ein.'; return; }
+    var row = { name: name, wochenlimit: L.round2(b) };
+    var aEl = form.querySelector('#li-aktiv');
+    if (aEl) row.aktiv = !!aEl.checked;
+    var r = id ? await sb.from('einkauf_limits').update(row).eq('id', id) : await sb.from('einkauf_limits').insert(row);
+    if (r.error) {
+      if (r.error.code === '23505') { err.textContent = 'Ein Limit mit diesem Namen gibt es schon.'; return; }
+      throw r.error;
+    }
+    closeModal(); await loadAll(); render(); toast('Gespeichert');
+  }
+
   // ---------- Ereignisse ----------
   document.addEventListener('click', function (e) {
     if (e.target === $modal) { closeModal(); return; }
     var el = e.target.closest('[data-action]');
     if (!el) return;
     var a = el.dataset.action, id = el.dataset.id;
-    if (a === 'toggle-paid' || a === 'aufgabe-done') return;
+    if (a === 'toggle-paid' || a === 'aufgabe-done' || a === 'foto-gewaehlt') return;
     if (a === 'tab') { S.tab = el.dataset.tab; render(); window.scrollTo(0, 0); }
     else if (a === 'abgleich') modalAbgleich();
     else if (a === 'posten-edit') modalPosten(id);
     else if (a === 'posten-neu') modalPostenNeu();
     else if (a === 'aufgabe-neu') modalAufgabe(null);
     else if (a === 'aufgabe-edit') modalAufgabe(id);
+    else if (a === 'einkauf-neu') modalEinkauf(null);
+    else if (a === 'einkauf-edit') modalEinkauf(id);
+    else if (a === 'einkauf-liste') modalEinkaeufe();
+    else if (a === 'beleg') run(function () { return showBeleg(id); });
+    else if (a === 'einkauf-del') { if (confirm('Diesen Einkauf samt Foto wirklich löschen?')) run(function () { return deleteEinkauf(id); }); }
+    else if (a === 'limits') modalLimits();
+    else if (a === 'limit-neu') modalLimit(null);
+    else if (a === 'limit-edit') modalLimit(id);
     else if (a === 'close-modal') closeModal();
     else if (a === 'toggle-done') { S.showDone = !S.showDone; render(); }
     else if (a === 'refresh') run(async function () { await loadAll(); render(); toast('Aktualisiert'); });
@@ -520,6 +743,10 @@
     if (!el.dataset) return;
     if (el.dataset.action === 'toggle-paid') run(function () { return togglePaid(el.dataset.id, el.checked); });
     else if (el.dataset.action === 'aufgabe-done') run(function () { return aufgabeDone(el.dataset.id, el.checked); });
+    else if (el.dataset.action === 'foto-gewaehlt') {
+      var info = document.getElementById('ek-fotoinfo'), f = el.files && el.files[0];
+      if (info) info.textContent = f ? 'Foto ausgewählt: ' + f.name : 'Kein Foto ausgewählt.';
+    }
   });
   document.addEventListener('submit', function (e) {
     var f = e.target;
@@ -531,6 +758,8 @@
     else if (k === 'posten-edit') run(function () { return savePosten(f); });
     else if (k === 'posten-neu') run(function () { return savePostenNeu(f); });
     else if (k === 'aufgabe') run(function () { return saveAufgabe(f); });
+    else if (k === 'einkauf') run(function () { return saveEinkauf(f); });
+    else if (k === 'limit') run(function () { return saveLimit(f); });
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && S.user && !$modal.innerHTML && !S.busy) reload();
