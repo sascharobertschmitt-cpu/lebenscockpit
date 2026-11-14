@@ -21,5 +21,7 @@ jobs:
           node-version: '22'
       - name: Finanzlogik testen
         run: node test/logic.test.js
+      - name: Grenzfälle testen
+        run: node test/edge.test.js
       - name: Oberfläche testen
         run: node test/smoke.test.js
