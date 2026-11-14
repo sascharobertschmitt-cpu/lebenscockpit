@@ -1,0 +1,16 @@
+const assert = require('assert');
+const csv = require('../bank-csv.js');
+const sample = '\uFEFF"Buchungstag";"Betrag";"Verwendungszweck";"Begünstigter/Zahlungspflichtiger"\n"13.11.2026";"-1.234,56";"Supermarkt; Einkauf";"Markt GmbH"\n"14.11.2026";"120,00";"Gehalt";"Arbeitgeber"';
+const parsed=csv.parseCSV(sample);
+assert.strictEqual(parsed.rows.length,2);
+const mapping=csv.detect(parsed.headers);
+const result=csv.prepare(parsed,mapping,'sascha');
+assert.strictEqual(result.errors.length,0);
+assert.strictEqual(result.rows[0].betrag,-1234.56);
+assert.strictEqual(result.rows[0].verwendungszweck,'Supermarkt; Einkauf');
+assert.strictEqual(result.rows[1].buchungsdatum,'2026-11-14');
+assert.strictEqual(csv.date('31.02.2026'),null);
+assert.strictEqual(csv.amount('1.234,50'),1234.5);
+const duplicate=csv.parseCSV('Datum;Betrag;Verwendungszweck\n13.11.2026;-2,00;Kaffee\n13.11.2026;-2,00;Kaffee');
+assert.strictEqual(csv.prepare(duplicate,csv.detect(duplicate.headers),'luna').rows.length,1);
+console.log('Bank CSV tests passed');
