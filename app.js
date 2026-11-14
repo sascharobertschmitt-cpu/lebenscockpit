@@ -444,16 +444,30 @@
     }
     await loadAll(); render();
   }
+  // Folgeaufgabe einer wiederkehrenden Aufgabe: beim Abhaken anlegen, beim Entfernen des Hakens wieder löschen.
+  function followUp(a) {
+    var f = L.iso(L.nextRecurrence(a.faellig, a.wiederholung, todayD()));
+    var same = S.aufgaben.filter(function (x) {
+      return x.id !== a.id && !x.erledigt && x.titel === a.titel && x.zustaendig === a.zustaendig && x.wiederholung === a.wiederholung && x.faellig && x.faellig > (a.faellig || '');
+    }).sort(function (x, y) { return x.faellig.localeCompare(y.faellig); });
+    return { faellig: f, existing: same };
+  }
   async function aufgabeDone(id, checked) {
     var a = S.aufgaben.find(function (x) { return x.id === id; });
     if (!a) return;
+    if (a.wiederholung) {
+      var fu = followUp(a);
+      if (checked && !fu.existing.length) {
+        // erst die Folgeaufgabe anlegen: schlägt das fehl, bleibt die Aufgabe offen und nichts geht verloren
+        var r2 = await sb.from('aufgaben').insert({ titel: a.titel, zustaendig: a.zustaendig, faellig: fu.faellig, wiederholung: a.wiederholung });
+        if (r2.error) throw r2.error;
+      } else if (!checked && fu.existing.length) {
+        var r3 = await sb.from('aufgaben').delete().eq('id', fu.existing[0].id);
+        if (r3.error) throw r3.error;
+      }
+    }
     var r = await sb.from('aufgaben').update({ erledigt: checked, erledigt_am: checked ? new Date().toISOString() : null }).eq('id', id);
     if (r.error) throw r.error;
-    if (checked && a.wiederholung) {
-      var next = L.nextRecurrence(a.faellig, a.wiederholung, todayD());
-      var r2 = await sb.from('aufgaben').insert({ titel: a.titel, zustaendig: a.zustaendig, faellig: L.iso(next), wiederholung: a.wiederholung });
-      if (r2.error) throw r2.error;
-    }
     await loadAll(); render();
   }
   async function backup() {
