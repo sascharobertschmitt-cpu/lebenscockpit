@@ -373,7 +373,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   // Zuordnen
   click({ action: 'eingang-zuordnen', id: 'b1' }); await tick(); await tick();
   eg = flat(elements.modal.innerHTML);
-  assert.ok(/Beleg zuordnen/.test(eg) && /<img class="beleg"/.test(eg) && /id="zu-betrag"/.test(eg), 'Foto neben dem Formular');
+  assert.ok(/Beleg zuordnen/.test(eg) && /<img class="beleg compact"/.test(eg) && /id="zu-betrag"/.test(eg), 'Foto neben dem Formular');
   assert.ok(calls.some((c) => c[0] === 'storage.sign' && c[2] === 'b1.jpg'), 'Foto über signierte URL');
   assert.ok(/Lebensmittel/.test(eg) && !/Beendet/.test(eg), 'nur aktive Limits');
   elements['zu-zeile'] = { value: '23,45; 13.11.2026; Rewe; Lebensmittel' };
