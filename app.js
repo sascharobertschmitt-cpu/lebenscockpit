@@ -341,7 +341,7 @@
       '<label for="pe-n">Notiz</label><input id="pe-n" value="' + esc(p.notiz || '') + '">' +
       '<div class="err" id="pe-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>' +
       '<div style="height:12px"></div>' +
-      (p.rhythmus === 'einmalig' ? '<button class="danger" data-action="posten-delete" data-id="' + esc(p.id) + '">Zahlung löschen</button>' : '<button class="danger" data-action="posten-end" data-id="' + esc(p.id) + '">Posten beenden</button><p class="note">Beenden bedeutet: Ab heute zählt dieser Posten nicht mehr. Bisherige Zahlungen bleiben erhalten.</p>'));
+      (p.rhythmus === 'einmalig' ? (S.zahlungen.some(function (z) { return z.posten_id === p.id; }) ? '<p class="note">Diese Zahlung wurde bereits bestätigt und kann zum Schutz der Zahlungshistorie nicht gelöscht werden.</p>' : '<button class="danger" data-action="posten-delete" data-id="' + esc(p.id) + '">Zahlung löschen</button>') : '<button class="danger" data-action="posten-end" data-id="' + esc(p.id) + '">Posten beenden</button><p class="note">Beenden bedeutet: Ab heute zählt dieser Posten nicht mehr. Bisherige Zahlungen bleiben erhalten.</p>'));
   }
   async function savePosten(form) {
     var id = form.dataset.id;
@@ -472,8 +472,16 @@
     else if (a === 'backup') run(backup);
     else if (a === 'logout') logout();
     else if (a === 'posten-delete') {
-      if (!confirm('Diese Zahlung wirklich löschen?')) return;
-      run(async function () { var r = await sb.from('posten').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });
+      run(async function () {
+        // Den Zahlungsstatus vor dem Löschen erneut aus der Datenbank prüfen.
+        var history = await sb.from('posten_zahlungen').select('id').eq('posten_id', id).limit(1);
+        if (history.error) throw history.error;
+        if (history.data && history.data.length) { toast('Nicht gelöscht: Zahlungshistorie vorhanden.'); await loadAll(); render(); return; }
+        if (!confirm('Diese noch unbestätigte Zahlung wirklich löschen?')) return;
+        var r = await sb.from('posten').delete().eq('id', id);
+        if (r.error) throw r.error;
+        closeModal(); await loadAll(); render(); toast('Gelöscht');
+      });
     } else if (a === 'posten-end') {
       if (!confirm('Diesen Posten ab heute beenden?')) return;
       run(async function () { var r = await sb.from('posten').update({ gueltig_bis: L.iso(todayD()) }).eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Beendet'); });
