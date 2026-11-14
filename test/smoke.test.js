@@ -109,8 +109,8 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(/&lt;b&gt;x&lt;\/b&gt;/.test(app()));
 
   // The app uses atomic RPCs, not separate task or finance writes.
-  assert.ok(/rpc\\('set_task_completion'/.test(fs.readFileSync(path.join(root, 'app.js'), 'utf8')));
-  assert.ok(/rpc\\('save_account_reconciliation'/.test(fs.readFileSync(path.join(root, 'app.js'), 'utf8')));
+  assert.ok(fs.readFileSync(path.join(root, 'app.js'), 'utf8').includes("sb.rpc('set_task_completion'"));
+  assert.ok(fs.readFileSync(path.join(root, 'app.js'), 'utf8').includes("sb.rpc('save_account_reconciliation'"));
 
   // Mehr
   click({ action: 'tab', tab: 'mehr' });
