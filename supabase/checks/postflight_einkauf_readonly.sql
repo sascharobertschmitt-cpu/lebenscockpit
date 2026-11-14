@@ -27,7 +27,7 @@ SELECT name, ok FROM (VALUES
     NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid='storage.objects'::regclass
       AND p.polname NOT IN ('belege lesen','belege hochladen','belege loeschen')
       AND p.polroles && ARRAY['anon'::regrole::oid, 0::oid]
-      AND (p.polqual::text ILIKE '%belege%' OR p.polwithcheck::text ILIKE '%belege%')))
+      AND (pg_get_expr(p.polqual,p.polrelid) ILIKE '%belege%' OR pg_get_expr(p.polwithcheck,p.polrelid) ILIKE '%belege%')))
   ,('S4 Belege-Policies enthalten Mitgliedspruefung und Bucket-Bindung',
     (SELECT count(*) = 3 FROM pg_policies
       WHERE schemaname='storage' AND tablename='objects'
