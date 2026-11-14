@@ -124,3 +124,14 @@ input::placeholder{color:#8890a1;opacity:1}
 nav button{min-width:0}
 nav button svg{flex:none}
 @media(max-width:340px){#app{padding-left:10px;padding-right:10px}.grid2{gap:8px}.stat{padding:11px 9px}.hero{padding:19px 15px}nav button{font-size:10px}}
+
+/* Remaining funds breakdown */
+.restbudget{margin-top:18px;padding:19px 18px}
+.restbudget h2{margin:0 0 8px;font-size:19px}
+.restbudget .note{margin:7px 0 14px;font-size:12px;line-height:1.5}
+.restbudget-total{border:1px solid rgba(167,139,250,.38);border-radius:17px;background:rgba(167,139,250,.1);padding:15px 14px;margin:14px 0 8px;display:flex;flex-direction:column;gap:6px}
+.restbudget-total span{font-size:13px;color:var(--muted)}
+.restbudget-total strong{font-size:clamp(24px,7vw,34px);line-height:1.15;overflow-wrap:anywhere}
+.restbudget-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 0;border-bottom:1px solid rgba(180,185,210,.13);font-size:13px}
+.restbudget-line span{color:var(--muted);min-width:0}
+.restbudget-line b{text-align:right;overflow-wrap:anywhere;flex-shrink:0;max-width:53%}
