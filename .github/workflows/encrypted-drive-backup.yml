@@ -2,6 +2,8 @@ name: Encrypted Supabase backup to Google Drive
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
 
 permissions:
   contents: read
@@ -14,22 +16,39 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [lebenscockpit, reselling-manager]
     env:
-      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      PROJECT: ${{ matrix.project }}
+      DB_URL_LEBENSCOCKPIT: ${{ secrets.BACKUP_DB_URL_LEBENSCOCKPIT }}
+      DB_URL_RESELLING_MANAGER: ${{ secrets.BACKUP_DB_URL_RESELLING_MANAGER }}
       RCLONE_CONFIG_B64: ${{ secrets.BACKUP_RCLONE_CONFIG_B64 }}
       AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
       DRIVE_FOLDER_ID: ${{ vars.BACKUP_DRIVE_FOLDER_ID }}
     steps:
-      - name: Check required configuration
+      - name: Select database URL and check configuration
         shell: bash
         run: |
           set -euo pipefail
-          for key in DATABASE_URL RCLONE_CONFIG_B64 AGE_RECIPIENT DRIVE_FOLDER_ID; do
+          if [[ "$PROJECT" == "lebenscockpit" ]]; then
+            url="$DB_URL_LEBENSCOCKPIT"
+          else
+            url="$DB_URL_RESELLING_MANAGER"
+          fi
+          echo "::add-mask::$url"
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+          for key in RCLONE_CONFIG_B64 AGE_RECIPIENT DRIVE_FOLDER_ID; do
             if [[ -z "${!key:-}" ]]; then
               echo "::error::Missing configuration: $key"
               exit 1
             fi
           done
+          if [[ -z "$url" ]]; then
+            echo "::error::Missing database URL secret for $PROJECT"
+            exit 1
+          fi
       - name: Install backup tools
         run: |
           set -euo pipefail
@@ -45,14 +64,15 @@ jobs:
           printf '%s' "$RCLONE_CONFIG_B64" | base64 -d > "$tmpdir/rclone.conf"
           export RCLONE_CONFIG="$tmpdir/rclone.conf"
           stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-          filename="lebenscockpit-$stamp.dump.age"
-          # Database connection string must point to the direct or session pooler endpoint.
+          filename="$PROJECT-$stamp.dump.age"
+          # Session pooler (IPv4). User: backup_reader.<project-ref>, read-only role.
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" \
             -e DATABASE_URL \
             -v "$tmpdir:/backup" \
             postgres:17 \
-            pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/backup.dump
+            pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl \
+              --no-large-objects --file=/backup/backup.dump
           test -s "$tmpdir/backup.dump"
           age -r "$AGE_RECIPIENT" -o "$tmpdir/$filename" "$tmpdir/backup.dump"
           test -s "$tmpdir/$filename"
