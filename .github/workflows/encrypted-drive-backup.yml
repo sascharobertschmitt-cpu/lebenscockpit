@@ -56,13 +56,33 @@ jobs:
           stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           filename="$PROJECT-$stamp.dump.age"
           # Session pooler (IPv4). User: backup_reader.<project-ref>, read-only role.
-          docker run --rm --network host \
-            --user "$(id -u):$(id -g)" \
-            -e DATABASE_URL \
-            -v "$PWD/work:/backup" \
-            postgres:17 \
-            pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl \
-              --no-large-objects --file=/backup/backup.dump
+          # Secret may contain the placeholder HOST; try the eu-central-1 session poolers.
+          if [[ "$DATABASE_URL" == *"@HOST:"* ]]; then
+            hosts="aws-1-eu-central-1.pooler.supabase.com aws-0-eu-central-1.pooler.supabase.com"
+          else
+            hosts="keep"
+          fi
+          ok=0
+          for h in $hosts; do
+            if [[ "$h" == "keep" ]]; then
+              url="$DATABASE_URL"
+            else
+              url="${DATABASE_URL/@HOST:/@$h:}"
+            fi
+            echo "::add-mask::$url"
+            if docker run --rm --network host \
+                --user "$(id -u):$(id -g)" \
+                -e PGURL="$url" \
+                -v "$PWD/work:/backup" \
+                postgres:17 \
+                sh -c 'pg_dump --dbname="$PGURL" --format=custom --no-owner --no-acl --no-large-objects --file=/backup/backup.dump'; then
+              echo "Connected via $h"
+              ok=1
+              break
+            fi
+            rm -f work/backup.dump
+          done
+          [[ $ok == 1 ]] || { echo "::error::pg_dump failed on all hosts"; exit 1; }
           test -s work/backup.dump
           age -r "$AGE_RECIPIENT" -o "out/$filename" work/backup.dump
           test -s "out/$filename"
