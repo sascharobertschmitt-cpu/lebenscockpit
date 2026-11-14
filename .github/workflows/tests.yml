@@ -70,36 +70,10 @@ jobs:
           SQL
       - name: Historien-Schutzmigration anwenden
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114110000_protect_payment_history.sql
-      - name: TRUNCATE-Berechtigung der API-Rollen absichern
+      - name: Berechtigungen der API-Rollen absichern (TRUNCATE & Co.)
         run: |
-          psql -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE ROLE anon NOLOGIN;
-          CREATE ROLE authenticated NOLOGIN;
-          CREATE TABLE public.mitglieder (id integer);
-          CREATE TABLE public.einnahmen (id integer);
-          CREATE TABLE public.kontostaende (id integer);
-          CREATE TABLE public.aufgaben (id integer);
-          GRANT ALL ON TABLE public.mitglieder, public.einnahmen,
-            public.posten, public.posten_zahlungen, public.kontostaende,
-            public.aufgaben TO anon, authenticated;
-          SQL
-          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114120000_revoke_truncate_from_api_roles.sql
-          psql -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
-          DECLARE role_name text; table_name text;
-          BEGIN
-            FOREACH role_name IN ARRAY ARRAY['anon','authenticated'] LOOP
-              FOREACH table_name IN ARRAY ARRAY['mitglieder','einnahmen','posten','posten_zahlungen','kontostaende','aufgaben'] LOOP
-                IF has_table_privilege(role_name, 'public.' || table_name, 'TRUNCATE') THEN
-                  RAISE EXCEPTION 'TRUNCATE still granted: %.%', role_name, table_name;
-                END IF;
-                IF NOT has_table_privilege(role_name, 'public.' || table_name, 'SELECT') THEN
-                  RAISE EXCEPTION 'SELECT unexpectedly removed: %.%', role_name, table_name;
-                END IF;
-              END LOOP;
-            END LOOP;
-          END $;
-          SQL
+          createdb lebenscockpit_privs
+          psql -v ON_ERROR_STOP=1 -d lebenscockpit_privs -f test/db/truncate_privileges.sql
       - name: Löschen mit Historie muss scheitern
         run: |
           psql -v ON_ERROR_STOP=1 <<'SQL'
