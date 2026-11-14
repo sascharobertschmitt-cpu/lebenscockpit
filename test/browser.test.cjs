@@ -71,6 +71,9 @@ async function check(browserType, width) {
     await page.goto('http://cockpit.test/');
     const pair = page.locator('.dashboard-money-pair');
     await pair.waitFor();
+    assert.equal(await pair.locator('strong').evaluateAll(nodes => nodes.every(node =>
+      node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height < parseFloat(getComputedStyle(node).lineHeight) * 1.5
+    )), true, 'Dashboard amounts fit on one line without clipping');
     assert(!((await pair.textContent()).includes('Lunas Stand fehlt')), 'Luna remains visible after 35 Sascha updates');
     await page.locator('[data-fold="today-future"] summary').click();
     await page.locator('[data-fold="today-finances"] summary').click();
