@@ -499,10 +499,10 @@
   async function backup() {
     var r = await Promise.all([
       sb.from('einnahmen').select('*'), sb.from('posten').select('*'), sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*')
+      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*'), sb.from('bankumsaetze').select('*')
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data };
+    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data, bankumsaetze: r[5].data };
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
