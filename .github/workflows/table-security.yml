@@ -1,0 +1,24 @@
+name: Supabase table security guard
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/check_table_security.py'
+      - '.github/workflows/table-security.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/check_table_security.py'
+permissions:
+  contents: read
+jobs:
+  migration-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check table security controls
+        run: python scripts/check_table_security.py
