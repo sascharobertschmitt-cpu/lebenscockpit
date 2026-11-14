@@ -28,7 +28,8 @@ const db = {
   kontostaende: [{ id: 'k1', betrag: 1840, erfasst_am: '2026-11-13T17:00:00Z', erfasst_von: 'test' }],
   aufgaben: [
     { id: 'a1', titel: 'Müll rausstellen', zustaendig: 'Luna', faellig: '2026-11-13', wiederholung: 'woechentlich', erledigt: false },
-    { id: 'a2', titel: 'Paket abholen <b>x</b>', zustaendig: 'Sascha', faellig: null, wiederholung: null, erledigt: false }
+    { id: 'a2', titel: 'Paket abholen <b>x</b>', zustaendig: 'Sascha', faellig: null, wiederholung: null, erledigt: false },
+    { id: 'a3', titel: 'Termin vorbereiten', zustaendig: 'Sascha', faellig: '2026-11-20', wiederholung: null, erledigt: false }
   ]
 };
 const calls = [];
@@ -81,7 +82,10 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   const app = () => elements.app.innerHTML;
 
   // Heute
-  assert.ok(/Frei verfügbar pro Tag/.test(app()), 'Heute zeigt das Tagesbudget');
+  assert.ok(/Gemeinsam noch verfügbar/.test(app()) && /Saschas Konto: Spielraum/.test(app()), 'Heute zeigt beide großen Geldbeträge');
+  assert.ok(/dashboard-money-pair/.test(app()), 'Geldbeträge nebeneinander');
+  assert.ok(/Zukünftige Aufgaben \(1\)/.test(app()) && /Termin vorbereiten/.test(app()), 'Zukünftige Aufgaben vollständig vorhanden');
+  assert.ok(/Aufgaben ohne Termin \(1\)/.test(app()), 'Aufgaben ohne Termin separat');
   assert.ok(/Kontostand aktualisieren/.test(app()));
   assert.ok(/noch nicht abgehakt/.test(app()), 'Hinweis auf nicht abgehakte Zahlungen');
   assert.ok(/Müll rausstellen/.test(app()));

@@ -175,24 +175,12 @@
     } else {
       var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
       var l = lage.luna ? Number(lage.luna.betrag) : null;
-      if (lage.luecke != null) {
-        var sub = 'Kontostand ' + eur(Number(lage.stand.betrag)) + ' plus Dispo ' + eur0(DISPO) + ' minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen.';
-        h += '<div class="hero bad"><div class="lbl">Auf Saschas Konto fehlen bis ' + esc(fmtD(lage.next.date)) + '</div><div class="big">' + eur0(lage.luecke) + '</div><div class="sm">' + sub + '</div></div>';
-      } else {
-        h += '<div class="hero"><div class="lbl">Frei verfügbar pro Tag</div><div class="big">' + eur0(lage.tagesbudget) + '</div>' +
-          '<div class="sm">' + eur0(lage.verfuegbar) + ' Spielraum nach offenen Zahlungen (inkl. Dispo), ' + lage.days + (lage.days === 1 ? ' Tag' : ' Tage') + ' bis ' + esc(who) + '</div></div>';
-      }
-      if (lage.luna) {
-        if (lage.gesamt < 0) {
-          h += '<div class="warn">Mit Lunas Konto (' + eur(l) + ') gegengerechnet fehlen zusammen noch <b>' + eur(-lage.gesamt) + '</b>.</div>';
-        } else if (lage.luecke != null) {
-          h += '<div class="card">Lunas Konto (' + eur(l) + ') deckt die Lücke. Danach bleiben zusammen ' + eur(lage.gesamt) + '.</div>';
-        } else {
-          h += '<div class="card">Zusammen mit Lunas Konto (' + eur(l) + ') bleiben ' + eur(lage.gesamt) + '.</div>';
-        }
-      } else {
-        h += '<div class="warn">Lunas Kontostand fehlt noch. Trag ihn über "Kontostand aktualisieren" ein.</div>';
-      }
+      h += '<div class="hero neutral"><div class="lbl">Finanzlage bis ' + esc(fmtD(lage.next.date)) + '</div>';
+      h += '<div class="dashboard-money-pair">' +
+        '<div class="dashboard-money-item"><span>Saschas Konto: ' + (lage.luecke != null ? 'Fehlbetrag' : 'Spielraum') + '</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Gemeinsam noch verfügbar</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
+        '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p></div>';
+
     }
 
     h += '</div></details>';
@@ -215,9 +203,15 @@
     h += '</div></details>';
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
-    var open = S.aufgaben.filter(function (a) { return !a.erledigt && a.faellig && L.parseISO(a.faellig) <= t; });
-    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + open.length + ')</summary><div class="dash-fold-body"><div class="card">' +
-      (open.length ? open.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
+    var open = S.aufgaben.filter(function (a) { return !a.erledigt; });
+    var todayTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) <= t; });
+    var futureTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) > t; }).sort(function (a,b) { return a.faellig.localeCompare(b.faellig); });
+    var undatedTasks = open.filter(function (a) { return !a.faellig; });
+    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + todayTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+      (todayTasks.length ? todayTasks.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
+    h += '<details class="dash-fold"><summary>Zukünftige Aufgaben (' + futureTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+      (futureTasks.length ? futureTasks.map(taskRow).join('') : '<div class="empty">Keine zukünftigen Aufgaben.</div>') + '</div></div></details>';
+    if (undatedTasks.length) h += '<details class="dash-fold"><summary>Aufgaben ohne Termin (' + undatedTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
 
     var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
     h += '<details class="dash-fold"><summary>Bald fällige Zahlungen (' + soon.length + ')</summary><div class="dash-fold-body"><div class="card">' + (soon.length ? soon.map(function (it) {
