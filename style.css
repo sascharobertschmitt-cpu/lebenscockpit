@@ -223,3 +223,6 @@ button.mini { flex-shrink: 0; width: auto; min-height: 36px; padding: 6px 12px; 
 textarea { width: 100%; min-height: 120px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--elevated); color: var(--text); font: 500 16px/1.5 var(--font); resize: vertical; }
 textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .warn-line { margin-top: 4px; font-size: 12px; color: var(--warn); }
+img.beleg.compact { max-height: 30vh; }
+img.beleg[data-action] { cursor: zoom-in; }
+#zu-zeile + button { margin-top: 8px; }

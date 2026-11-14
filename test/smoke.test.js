@@ -47,6 +47,10 @@ db.einkaeufe = [
   { id: 'e4', limit_id: 'l4', datum: '2026-11-12', betrag: '8.50', notiz: null, beleg_pfad: null, erfasst_am: '2026-11-12T10:00:00Z' },
   { id: 'e3', limit_id: 'l1', datum: '2026-11-02', betrag: '99.00', notiz: 'Vorwoche', beleg_pfad: null, erfasst_am: '2026-11-02T10:00:00Z' }
 ];
+db.beleg_eingang = [
+  { id: 'b1', beleg_pfad: 'b1.jpg', erfasst_am: '2026-11-12T14:05:00Z' },
+  { id: 'b2', beleg_pfad: 'b2.jpg', erfasst_am: '2026-11-13T09:30:00Z' }
+];
 const calls = [];
 const missing = new Set();           // Tabellen, die "noch nicht existieren"
 const failOps = new Set();           // z. B. 'einkaeufe.upsert' oder 'storage.upload'
@@ -87,6 +91,7 @@ sandbox.supabase = {
       }) },
       rpc: async (name, args) => {
         calls.push(['rpc', name, args]);
+        if (failOps.delete('rpc.' + name)) return { data: null, error: { message: 'Netzfehler' } };
         if (name === 'save_account_reconciliation' && sandbox.__failNextRpc) { sandbox.__failNextRpc = false; return { data: null, error: { message: 'Netzfehler' } }; }
         return { data: null, error: null };
       },
@@ -329,6 +334,78 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   imFields['#im-text'].value = '   '; await subSync(imForm);
   assert.ok(/Kein Eintrag/.test(imFields['#im-err'].textContent), 'leere Eingabe');
   click({ action: 'close-modal' });
+
+
+  // ---------- Belege-Eingang ----------
+  click({ action: 'close-modal' });
+  click({ action: 'tab', tab: 'heute' });
+  assert.ok(/Belege zuordnen <span class="count">2<\/span>/.test(app()), 'Dashboard zeigt die Zahl offener Belege');
+  click({ action: 'eingang' });
+  let eg = flat(elements.modal.innerHTML);
+  assert.ok(/Belege-Eingang/.test(eg) && /id="eg-fotos"/.test(eg) && /multiple/.test(eg) && /accept="image\/\*"/.test(eg), 'Eingang mit Mehrfach-Upload');
+  assert.strictEqual((eg.match(/Beleg vom/g) || []).length, 2, 'beide offenen Belege gelistet');
+  assert.ok(/Zählt erst|zählt erst/.test(eg), 'Hinweis: zählt erst nach Zuordnung');
+  // Upload mehrerer Fotos: je Foto Datei <id>.jpg und Zeile mit derselben id
+  const pick = (files) => { handlers.change.forEach((h) => h({ target: { dataset: { action: 'eingang-fotos' }, files, value: 'x' } })); return tick().then(tick).then(tick).then(tick).then(tick); };
+  const upl = () => calls.filter((c) => c[0] === 'storage.upload'), insE = () => calls.filter((c) => c[0] === 'beleg_eingang' && c[1] === 'insert');
+  const u0 = upl().length, i0 = insE().length;
+  await pick([{ name: 'a.jpg' }, { name: 'b.png' }]);
+  assert.strictEqual(upl().length - u0, 2, 'zwei Uploads');
+  const newIns = insE().slice(i0);
+  assert.strictEqual(newIns.length, 2);
+  newIns.forEach((c, i) => {
+    assert.ok(UUID.test(c[2].id), 'Eingangs-ID ist UUID');
+    assert.strictEqual(c[2].beleg_pfad, c[2].id + '.jpg', 'Pfad ist <id>.jpg');
+    assert.strictEqual(upl()[u0 + i][2], c[2].beleg_pfad, 'hochgeladene Datei passt zur Zeile');
+    assert.strictEqual(upl()[u0 + i][4].upsert, false);
+  });
+  // Zeile scheitert: Foto wird wieder entfernt, Meldung nennt den Fehlschlag
+  failOps.add('beleg_eingang.insert');
+  const r0 = calls.filter((c) => c[0] === 'storage.remove').length;
+  await pick([{ name: 'c.jpg' }]);
+  assert.ok(calls.filter((c) => c[0] === 'storage.remove').length === r0 + 1, 'verwaiste Datei wird entfernt');
+  assert.ok(/fehlgeschlagen/.test(elements.modal.innerHTML), 'Fehlschlag sichtbar');
+  // Mehr als 10: nichts wird hochgeladen
+  const u1 = upl().length;
+  await pick(Array.from({ length: 11 }, (_, i) => ({ name: i + '.jpg' })));
+  assert.strictEqual(upl().length, u1, 'mehr als 10 Fotos werden abgelehnt');
+
+  // Zuordnen
+  click({ action: 'eingang-zuordnen', id: 'b1' }); await tick(); await tick();
+  eg = flat(elements.modal.innerHTML);
+  assert.ok(/Beleg zuordnen/.test(eg) && /<img class="beleg"/.test(eg) && /id="zu-betrag"/.test(eg), 'Foto neben dem Formular');
+  assert.ok(calls.some((c) => c[0] === 'storage.sign' && c[2] === 'b1.jpg'), 'Foto über signierte URL');
+  assert.ok(/Lebensmittel/.test(eg) && !/Beendet/.test(eg), 'nur aktive Limits');
+  elements['zu-zeile'] = { value: '23,45; 13.11.2026; Rewe; Lebensmittel' };
+  ['zu-betrag', 'zu-datum', 'zu-notiz', 'zu-limit', 'zu-err'].forEach((k) => { elements[k] = { value: '', textContent: '' }; });
+  click({ action: 'zeile-uebernehmen' });
+  assert.deepStrictEqual([elements['zu-betrag'].value, elements['zu-datum'].value, elements['zu-notiz'].value, elements['zu-limit'].value], ['23,45', '2026-11-13', 'Rewe', 'l1'], 'ChatGPT-Zeile füllt das Formular');
+  elements['zu-zeile'].value = '5; 13.11.2026; x; Tanken'; click({ action: 'zeile-uebernehmen' });
+  assert.ok(/gibt es nicht/.test(elements['zu-err'].textContent), 'unbekanntes Limit in der Zeile');
+  elements['zu-zeile'].value = '1;13.11.2026;a;Lebensmittel\n2;13.11.2026;b;Lebensmittel'; click({ action: 'zeile-uebernehmen' });
+  assert.ok(/genau eine Zeile/.test(elements['zu-err'].textContent), 'nur eine Zeile erlaubt');
+  const zf = { '#zu-betrag': { value: '23,45' }, '#zu-datum': { value: '2026-11-13' }, '#zu-limit': { value: 'l1' }, '#zu-notiz': { value: ' Rewe ' }, '#zu-err': { textContent: '' } };
+  const zForm = { dataset: { form: 'zuordnen', id: 'b1' }, querySelector: (q) => zf[q] };
+  const zr = () => calls.filter((c) => c[0] === 'rpc' && c[1] === 'beleg_zuordnen');
+  zf['#zu-betrag'].value = '0'; await sub(zForm);
+  assert.ok(/größer als 0/.test(zf['#zu-err'].textContent) && zr().length === 0, 'ungültiger Betrag ruft nichts auf');
+  zf['#zu-betrag'].value = '23,45'; failOps.add('rpc.beleg_zuordnen');
+  await sub(zForm); await sub(zForm);                         // erster Versuch scheitert, zweiter ist die Wiederholung
+  assert.strictEqual(zr().length, 2);
+  assert.strictEqual(JSON.stringify(zr()[1][2]), JSON.stringify({ p_eingang_id: 'b1', p_limit_id: 'l1', p_datum: '2026-11-13', p_betrag: 23.45, p_notiz: 'Rewe' }), 'RPC mit Beleg-ID, Betrag, Datum, Notiz');
+  assert.strictEqual(zr()[0][2].p_eingang_id, zr()[1][2].p_eingang_id, 'Wiederholung nutzt dieselbe Beleg-ID');
+  // Verwerfen
+  click({ action: 'eingang-verwerfen', id: 'b2' }); await tick(); await tick(); await tick();
+  assert.ok(calls.some((c) => c[0] === 'beleg_eingang' && c[1] === 'delete'), 'Beleg verworfen');
+  assert.ok(calls.some((c) => c[0] === 'storage.remove' && c[2][0] === 'b2.jpg'), 'Foto des verworfenen Belegs entfernt');
+  click({ action: 'close-modal' });
+  // Migration 3 fehlt noch: kein Eingang, Rest funktioniert
+  missing.add('beleg_eingang');
+  click({ action: 'refresh' }); await tick(); await tick();
+  click({ action: 'tab', tab: 'heute' });
+  assert.ok(!/Belege zuordnen|Beleg-Fotos hinzufügen/.test(app()) && /Diese Woche noch übrig/.test(flat(app())), 'ohne Eingang-Tabelle: kein Button, Wocheneinkauf intakt');
+  missing.clear();
+  click({ action: 'refresh' }); await tick(); await tick();
 
   // Tabellen fehlen noch (Frontend vor Datenbank-Update): Rest der App bleibt benutzbar
   click({ action: 'close-modal' });

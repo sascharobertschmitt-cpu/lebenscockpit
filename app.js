@@ -11,7 +11,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], limits: [], kaeufe: [], einkaufFehler: false, showDone: false, folds: {}, loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], limits: [], kaeufe: [], eingang: [], eingangOk: false, einkaufFehler: false, showDone: false, folds: {}, loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
@@ -73,6 +73,11 @@
     } catch (e) {
       S.limits = []; S.kaeufe = []; S.einkaufFehler = true;
     }
+    // Belege-Eingang ist eine eigene, spätere Migration: fehlt sie, bleibt alles andere nutzbar
+    try {
+      var g = await sb.from('beleg_eingang').select('*').order('erfasst_am', { ascending: true });
+      S.eingangOk = !g.error; S.eingang = g.error ? [] : (g.data || []);
+    } catch (e2) { S.eingang = []; S.eingangOk = false; }
   }
   async function reload() {
     try { await loadAll(); } catch (e) { fail(e); }
@@ -490,6 +495,7 @@
     var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data };
     var e1 = await sb.from('einkauf_limits').select('*'), e2 = await sb.from('einkaeufe').select('*');
     data.einkauf_limits = e1.error ? null : e1.data; data.einkaeufe = e2.error ? null : e2.data;
+    var e3 = await sb.from('beleg_eingang').select('*'); data.beleg_eingang = e3.error ? null : e3.data;
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -506,6 +512,11 @@
     var cls = over ? ' is-over' : pct >= 80 ? ' is-near' : '';
     return '<div class="meter' + cls + '" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Number(pct) + '" aria-label="' + esc(label) + '"><span style="width:' + Number(pct) + '%"></span></div>';
   }
+  function eingangBtn() {
+    if (!S.eingangOk) return '';
+    var n = S.eingang.length;
+    return '<button data-action="eingang">' + (n ? 'Belege zuordnen <span class="count">' + n + '</span>' : 'Beleg-Fotos hinzufügen') + '</button>';
+  }
   function einkaufCard(t) {
     if (S.einkaufFehler) return '<section class="card" aria-label="Wocheneinkauf"><h2>Wocheneinkauf</h2><p class="note">Noch nicht eingerichtet. Das Datenbank-Update fehlt, die übrige App funktioniert normal.</p></section>';
     var st = L.einkaufStatus(S.limits, S.kaeufe, t);
@@ -513,7 +524,7 @@
     if (!st.rows.length) {
       return '<section class="card" aria-label="Wocheneinkauf">' + head.replace(/<p class="note">.*<\/p>/, '') +
         '<p class="note">Lege ein Wochenlimit an, zum Beispiel „Lebensmittel“ mit 80 Euro. Jeder erfasste Einkauf wird davon abgezogen, optional mit Foto vom Kassenzettel.</p>' +
-        '<button class="primary" data-action="limit-neu">Wochenlimit anlegen</button></section>';
+        '<button class="primary" data-action="limit-neu">Wochenlimit anlegen</button>' + eingangBtn() + '</section>';
     }
     var tot = st.total;
     var h = '<section class="card einkauf" aria-label="Wocheneinkauf">' + head +
@@ -525,7 +536,7 @@
         '<div class="limit-sub ' + (r.over ? 'overdue' : '') + '">' + (r.over ? eur(-r.rest) + ' über dem Limit' : 'noch ' + eur(r.rest) + (r.proTag > 0 && st.daysLeft > 1 ? ' · rund ' + eur(r.proTag) + ' pro Tag' : '')) + '</div></div>';
     });
     h += '<button class="primary" data-action="einkauf-neu">Einkauf erfassen</button>' +
-      '<button data-action="einkauf-import">Aus ChatGPT einfügen</button><div class="grid2 tight"><button data-action="einkauf-liste">Einkäufe und Belege</button><button data-action="limits">Limits ändern</button></div></section>';
+      eingangBtn() + '<button data-action="einkauf-import">Aus ChatGPT einfügen</button><div class="grid2 tight"><button data-action="einkauf-liste">Einkäufe und Belege</button><button data-action="limits">Limits ändern</button></div></section>';
     return h;
   }
 
@@ -586,21 +597,24 @@
     });
   }
 
+  // Gemeinsame Eingabeprüfung (Einkauf erfassen und Beleg zuordnen)
+  function pruefeEinkauf(betragTxt, datumTxt, limitId) {
+    var b = L.parseBetrag(betragTxt);
+    if (!isFinite(b) || b <= 0) return { error: 'Bitte gib einen Betrag größer als 0 ein.' };
+    if (b > 100000) return { error: 'Der Betrag ist zu groß.' };
+    if (!validISO(datumTxt)) return { error: 'Bitte gib ein gültiges Datum an.' };
+    var t = todayD(), dd = L.parseISO(datumTxt);
+    if (L.daysBetween(dd, t) > 365 || L.daysBetween(t, dd) > 7) return { error: 'Das Datum liegt zu weit in der Vergangenheit oder Zukunft.' };
+    if (!S.limits.some(function (l) { return l.id === limitId; })) return { error: 'Bitte wähle ein Limit.' };
+    return { betrag: L.round2(b), datum: datumTxt, limitId: limitId };
+  }
   async function saveEinkauf(form) {
     var err = form.querySelector('#ek-err');
     err.textContent = '';
     var editId = form.dataset.id || '';
-    var b = L.parseBetrag(form.querySelector('#ek-betrag').value);
-    if (!isFinite(b) || b <= 0) { err.textContent = 'Bitte gib einen Betrag größer als 0 ein.'; return; }
-    if (b > 100000) { err.textContent = 'Der Betrag ist zu groß.'; return; }
-    b = L.round2(b);
-    var d = form.querySelector('#ek-datum').value;
-    var t = todayD();
-    if (!validISO(d)) { err.textContent = 'Bitte gib ein gültiges Datum an.'; return; }
-    var dd = L.parseISO(d);
-    if (L.daysBetween(dd, t) > 365 || L.daysBetween(t, dd) > 7) { err.textContent = 'Das Datum liegt zu weit in der Vergangenheit oder Zukunft.'; return; }
-    var limitId = form.querySelector('#ek-limit').value;
-    if (!S.limits.some(function (l) { return l.id === limitId; })) { err.textContent = 'Bitte wähle ein Limit.'; return; }
+    var chk = pruefeEinkauf(form.querySelector('#ek-betrag').value, form.querySelector('#ek-datum').value, form.querySelector('#ek-limit').value);
+    if (chk.error) { err.textContent = chk.error; return; }
+    var b = chk.betrag, d = chk.datum, limitId = chk.limitId;
     var row = { limit_id: limitId, datum: d, betrag: b, notiz: form.querySelector('#ek-notiz').value.trim() || null };
     if (editId) {
       var u = await sb.from('einkaeufe').update(row).eq('id', editId);
@@ -758,13 +772,112 @@
     catch (e) { toast('Kopieren nicht möglich. Öffne „Prompt anzeigen“ und kopiere von Hand.'); }
   }
 
+  // ---------- Belege-Eingang ----------
+  // Fotos von Bons lassen sich ohne Betrag hinterlegen und später einem Einkauf zuordnen.
+  function fmtZeit(iso) {
+    var d = new Date(iso);
+    return fmtD(d) + ', ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+  function modalEingang(msg) {
+    var rows = S.eingang.map(function (g) {
+      return '<div class="row"><div class="main" data-action="eingang-zuordnen" data-id="' + esc(g.id) + '"><div class="t">Beleg vom ' + esc(fmtZeit(g.erfasst_am)) + '</div><div class="s">Tippen zum Zuordnen</div></div>' +
+        '<button class="mini" data-action="eingang-zuordnen" data-id="' + esc(g.id) + '">Zuordnen</button></div>';
+    }).join('');
+    openModal('<h1>Belege-Eingang</h1><p class="note">Fotos von Bons hinterlegen und später einem Einkauf zuordnen. Ein Beleg zählt erst im Wochenlimit, wenn er zugeordnet ist.</p>' +
+      '<label for="eg-fotos">Fotos hinzufügen (mehrere möglich, bis zu 10)</label><input id="eg-fotos" type="file" accept="image/*" multiple data-action="eingang-fotos">' +
+      '<div class="note" id="eg-status" aria-live="polite">' + esc(msg || 'Kamera, Mediathek oder Screenshot. Das Foto wird verkleinert und privat gespeichert. Achte darauf, dass keine Kartendaten sichtbar sind.') + '</div>' +
+      '<div class="card flat">' + (rows || '<div class="empty">Keine offenen Belege.</div>') + '</div>' +
+      '<div class="actions"><button type="button" data-action="close-modal">Schließen</button></div>');
+  }
+  async function eingangHochladen(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    var status = document.getElementById('eg-status');
+    if (!files.length) return;
+    if (files.length > 10) { if (status) status.textContent = 'Bitte höchstens 10 Fotos auf einmal auswählen.'; return; }
+    var ok = 0, fehler = 0;
+    for (var i = 0; i < files.length; i++) {
+      if (status) status.textContent = 'Foto ' + (i + 1) + ' von ' + files.length + ' wird gespeichert…';
+      var id = newRequestId(), path = id + '.jpg', hochgeladen = false;
+      try {
+        var blob = await shrinkImage(files[i]);
+        var up = await sb.storage.from('belege').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (up.error) throw up.error;
+        hochgeladen = true;
+        var ins = await sb.from('beleg_eingang').insert({ id: id, beleg_pfad: path });
+        if (ins.error) throw ins.error;
+        ok++;
+      } catch (e) {
+        fehler++;
+        if (hochgeladen) { try { await sb.storage.from('belege').remove([path]); } catch (e3) { /* verwaiste Datei ist harmlos */ } }
+      }
+    }
+    input.value = '';
+    await loadAll(); render();
+    modalEingang((ok ? ok + (ok === 1 ? ' Foto gespeichert. ' : ' Fotos gespeichert. ') : '') + (fehler ? fehler + (fehler === 1 ? ' Foto ist fehlgeschlagen, bitte erneut versuchen.' : ' Fotos sind fehlgeschlagen, bitte erneut versuchen.') : ''));
+  }
+  async function modalZuordnen(id) {
+    var g = S.eingang.find(function (x) { return x.id === id; });
+    if (!g) return;
+    var limits = aktiveLimits();
+    if (!limits.length) { toast('Lege zuerst ein Wochenlimit an.'); modalLimit(null); return; }
+    var r = await sb.storage.from('belege').createSignedUrl(g.beleg_pfad, 300);
+    if (r.error || !r.data || !r.data.signedUrl) throw new Error('Das Foto konnte nicht geladen werden.');
+    var opts = limits.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.name) + '</option>'; }).join('');
+    openModal('<h1>Beleg zuordnen</h1><img class="beleg compact" alt="Foto vom Bon, antippen zum Vergrößern" data-action="beleg-gross" src="' + esc(r.data.signedUrl) + '"><p class="note">Bild antippen zum Vergrößern.</p>' +
+      '<form data-form="zuordnen" data-id="' + esc(g.id) + '">' +
+      '<label for="zu-zeile">Zeile aus ChatGPT (optional)</label><input id="zu-zeile" autocomplete="off" placeholder="23,45; 13.11.2026; Rewe; Lebensmittel">' +
+      '<button type="button" data-action="zeile-uebernehmen">Zeile übernehmen</button>' +
+      '<label for="zu-limit">Limit</label><select id="zu-limit">' + opts + '</select>' +
+      '<label for="zu-betrag">Betrag in Euro</label><input id="zu-betrag" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 23,45" required>' +
+      '<label for="zu-datum">Datum</label><input id="zu-datum" type="date" value="' + esc(L.iso(new Date(g.erfasst_am))) + '" required>' +
+      '<label for="zu-notiz">Notiz (optional)</label><input id="zu-notiz" maxlength="200" placeholder="zum Beispiel Rewe">' +
+      '<div class="err" id="zu-err"></div><div class="actions"><button type="button" data-action="eingang">Zurück</button><button class="primary" type="submit">Zuordnen</button></div></form>' +
+      '<div class="gap"></div><button class="danger" data-action="eingang-verwerfen" data-id="' + esc(g.id) + '">Beleg verwerfen</button>');
+  }
+  function zeileUebernehmen() {
+    var inp = document.getElementById('zu-zeile'), err = document.getElementById('zu-err');
+    if (err) err.textContent = '';
+    var res = L.parseEinkaufText(inp ? inp.value : '', S.limits, S.kaeufe, todayD());
+    if (res.rows.length !== 1) { if (err) err.textContent = 'Bitte genau eine Zeile einfügen.'; return; }
+    var r = res.rows[0];
+    if (r.errors.length) { if (err) err.textContent = r.errors[0] + '.'; return; }
+    document.getElementById('zu-betrag').value = String(r.betrag).replace('.', ',');
+    document.getElementById('zu-datum').value = r.datum;
+    document.getElementById('zu-notiz').value = r.notiz || '';
+    document.getElementById('zu-limit').value = r.limit_id;
+    if (r.warnings.length && err) err.textContent = r.warnings[0] + '. Prüfe, ob der Einkauf nicht schon erfasst ist.';
+  }
+  async function saveZuordnung(form) {
+    var err = form.querySelector('#zu-err');
+    err.textContent = '';
+    var chk = pruefeEinkauf(form.querySelector('#zu-betrag').value, form.querySelector('#zu-datum').value, form.querySelector('#zu-limit').value);
+    if (chk.error) { err.textContent = chk.error; return; }
+    var r = await sb.rpc('beleg_zuordnen', {
+      p_eingang_id: form.dataset.id, p_limit_id: chk.limitId, p_datum: chk.datum, p_betrag: chk.betrag,
+      p_notiz: form.querySelector('#zu-notiz').value.trim() || null
+    });
+    if (r.error) throw r.error;
+    await loadAll(); render();
+    toast('Zugeordnet');
+    if (S.eingang.length) modalEingang(); else closeModal();
+  }
+  async function eingangVerwerfen(id) {
+    var g = S.eingang.find(function (x) { return x.id === id; });
+    if (!g) return;
+    var r = await sb.from('beleg_eingang').delete().eq('id', id);
+    if (r.error) throw r.error;
+    try { await sb.storage.from('belege').remove([g.beleg_pfad]); } catch (e) { /* Datei bleibt ggf. liegen */ }
+    await loadAll(); render(); toast('Beleg verworfen');
+    modalEingang();
+  }
+
   // ---------- Ereignisse ----------
   document.addEventListener('click', function (e) {
     if (e.target === $modal) { closeModal(); return; }
     var el = e.target.closest('[data-action]');
     if (!el) return;
     var a = el.dataset.action, id = el.dataset.id;
-    if (a === 'toggle-paid' || a === 'aufgabe-done' || a === 'foto-gewaehlt') return;
+    if (a === 'toggle-paid' || a === 'aufgabe-done' || a === 'foto-gewaehlt' || a === 'eingang-fotos') return;
     if (a === 'tab') { S.tab = el.dataset.tab; render(); window.scrollTo(0, 0); }
     else if (a === 'abgleich') modalAbgleich();
     else if (a === 'posten-edit') modalPosten(id);
@@ -775,6 +888,11 @@
     else if (a === 'einkauf-edit') modalEinkauf(id);
     else if (a === 'einkauf-liste') modalEinkaeufe();
     else if (a === 'einkauf-import') modalImport('');
+    else if (a === 'eingang') modalEingang();
+    else if (a === 'beleg-gross') el.classList.toggle('compact');
+    else if (a === 'eingang-zuordnen') run(function () { return modalZuordnen(id); });
+    else if (a === 'zeile-uebernehmen') zeileUebernehmen();
+    else if (a === 'eingang-verwerfen') { if (confirm('Diesen Beleg verwerfen? Das Foto wird gelöscht.')) run(function () { return eingangVerwerfen(id); }); }
     else if (a === 'import-zurueck') modalImport(S.importText || '');
     else if (a === 'import-buchen') run(importBuchen);
     else if (a === 'import-prompt') run(function () { return kopiereText(chatgptPrompt()); });
@@ -808,6 +926,7 @@
     if (!el.dataset) return;
     if (el.dataset.action === 'toggle-paid') run(function () { return togglePaid(el.dataset.id, el.checked); });
     else if (el.dataset.action === 'aufgabe-done') run(function () { return aufgabeDone(el.dataset.id, el.checked); });
+    else if (el.dataset.action === 'eingang-fotos') run(function () { return eingangHochladen(el); });
     else if (el.dataset.action === 'foto-gewaehlt') {
       var info = document.getElementById('ek-fotoinfo'), f = el.files && el.files[0];
       if (info) info.textContent = f ? 'Foto ausgewählt: ' + f.name : 'Kein Foto ausgewählt.';
@@ -826,6 +945,7 @@
     else if (k === 'einkauf') run(function () { return saveEinkauf(f); });
     else if (k === 'limit') run(function () { return saveLimit(f); });
     else if (k === 'import-pruefen') importPruefen(f);
+    else if (k === 'zuordnen') run(function () { return saveZuordnung(f); });
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && S.user && !$modal.innerHTML && !S.busy) reload();

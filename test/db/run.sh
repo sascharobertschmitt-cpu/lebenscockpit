@@ -74,6 +74,7 @@ expect_err() { # name pattern output(+status via $?)
 reset() { su "TRUNCATE public.aufgaben, public.posten_zahlungen, public.posten, public.kontostaende CASCADE" >/dev/null; }
 . test/db/cases_security.sh
 . test/db/cases_einkauf.sh
+. test/db/cases_eingang.sh
 . test/db/cases_tasks.sh
 . test/db/cases_finance.sh
 echo; echo "Bestanden: $PASS, Fehlgeschlagen: $FAIL"

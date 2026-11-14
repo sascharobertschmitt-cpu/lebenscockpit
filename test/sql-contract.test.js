@@ -55,4 +55,11 @@ assert.match(bel, /VALUES \('belege', 'belege', false,/i, 'Bucket muss privat se
 assert.doesNotMatch(bel, /public\s*=\s*true|TO anon|TO public/i, 'Bucket darf nicht oeffentlich sein');
 assert.doesNotMatch(bel, /FOR UPDATE/i, 'Belege sind unveraenderlich');
 assert.match(bel, /ist_mitglied/i);
+const eg = fs.readFileSync(path.join(dir, '20261115100200_beleg_eingang.sql'), 'utf8');
+assert.match(eg, /ALTER TABLE public\.beleg_eingang ENABLE ROW LEVEL SECURITY/i);
+assert.match(eg, /SECURITY INVOKER/i); assert.match(eg, /SET search_path = ''/i);
+assert.match(eg, /REVOKE ALL ON FUNCTION public\.beleg_zuordnen.* FROM PUBLIC, anon/i);
+assert.match(eg, /GRANT EXECUTE ON FUNCTION public\.beleg_zuordnen.* TO authenticated/i);
+assert.match(eg, /FOR UPDATE/i, 'Zuordnen muss die Eingangszeile sperren (parallele Aufrufe)');
+assert.match(eg, /beleg_pfad = id::text \|\| '\.jpg'/i, 'Pfad immer <id>.jpg');
 console.log('SQL contract checks passed (static, not a database test)');

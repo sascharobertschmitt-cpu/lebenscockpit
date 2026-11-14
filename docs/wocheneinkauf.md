@@ -20,6 +20,16 @@ Das Bild bleibt in ChatGPT. Der Foto-Upload in der App (privater Bucket) bleibt 
 
 **Preis dieses Wegs:** Die Bons gehen an OpenAI und nicht mehr nur an Supabase. Prüft, ob das für Kassenbons (Kartenziffern, Kundenkarten) in Ordnung ist, und schaltet in ChatGPT das Training mit Chats ab, falls nicht geschehen. Außerdem bleibt es ein Handgriff mehr (Kopieren und Einfügen), und ChatGPT kann Beträge falsch lesen: Die Vorschau ist der Prüfpunkt, die App kann nicht erkennen, ob 23,45 wirklich auf dem Bon steht.
 
+## Belege-Eingang (Fotos zuerst, Zuordnen später)
+Luna kann Bon-Fotos ohne Betrag in der App hinterlegen (mehrere auf einmal, bis zu 10) und später zuordnen.
+- **Dashboard:** Button „Beleg-Fotos hinzufügen“, bei offenen Belegen „Belege zuordnen (N)“.
+- **Zuordnen:** Foto groß (zum Vergrößern antippen) neben Limit, Betrag, Datum und Notiz. Wahlweise fügt Luna die Zeile aus ChatGPT ein („Zeile übernehmen“), das füllt das Formular. Erst nach dem Speichern zählt der Einkauf im Wochenlimit.
+- **Atomar:** `beleg_zuordnen()` legt den Einkauf an und entfernt den Beleg aus dem Eingang in einer Transaktion. Wiederholung, Doppeltipp oder zwei Geräte gleichzeitig ergeben genau einen Einkauf (der Einkauf übernimmt die ID des Belegs, die Eingangszeile wird gesperrt).
+- **Verwerfen:** löscht Zeile und Foto.
+- **Datenbank:** `supabase/migrations/20261115100200_beleg_eingang.sql` (Teil 3, setzt Teil 1 und für Fotos Teil 2 voraus), `supabase/checks/postflight_eingang_readonly.sql`, Rollback `supabase/rollback/20261115100200_beleg_eingang_down.sql` (verweigert sich bei offenen Belegen).
+- **Rolloutsicher:** Fehlt Teil 3 noch, verschwindet nur der Eingang-Button, der Rest läuft.
+- Ohne ChatGPT geht es genauso: Luna tippt den Betrag vom Foto selbst ab.
+
 ## Was gebaut ist
 - **Dashboard (Heute):** Karte „Wocheneinkauf“ direkt unter „Kontostand aktualisieren“. Oben „Diese Woche noch übrig“ und die Summe, darunter je Limit Betrag, Balken (gelb ab 80 %, rot bei Überschreitung), Rest, „rund X € pro Tag“ und die verbleibenden Tage.
 - **Einkauf erfassen:** Limit, Betrag, Datum, Notiz, optional Foto (Kamera oder Mediathek). Das Foto wird auf dem Gerät auf max. 1600 px verkleinert und als JPEG neu kodiert. Das spart Speicher und entfernt EXIF/GPS-Daten.
@@ -47,9 +57,9 @@ Der Storage-Teil ist bewusst getrennt: Die Tabelle `storage.objects` gehört in 
 
 ## Rollout
 1. Backup wie im Plan `docs/migration-rollout-plan.md`.
-2. **Teil 1** im SQL-Editor anwenden, `postflight_einkauf_readonly.sql` ausführen (Zeilen `S1`/`S2` sind dann noch rot).
+2. **Teil 1** (und Teil 3, `…100200`, nach Teil 1) im SQL-Editor anwenden, `postflight_einkauf_readonly.sql` ausführen (Zeilen `S1`/`S2` sind dann noch rot).
 3. **Teil 2 zuerst auf einem Testprojekt oder Supabase-Branch** probieren. Klappt `CREATE POLICY` nicht per SQL, Bucket und drei Policies im Dashboard (Storage) mit denselben Bedingungen anlegen. Dann Postflight komplett grün.
-4. `supabase migration repair --status applied 20261115100000 20261115100100`.
+4. `supabase migration repair --status applied 20261115100000 20261115100100 20261115100200`.
 5. Test mit echtem Login auf dem Branch-Frontend: Limit anlegen, Einkauf mit Foto auf iPhone erfassen, Foto ansehen, als Sascha dasselbe sehen, Einkauf löschen und prüfen, dass das Foto verschwindet.
 6. Frontend mergen (Cache-Version ist auf `20261115-1` erhöht).
 
