@@ -1,4 +1,4 @@
-name: Encrypted Supabase backup to Google Drive
+name: Encrypted Supabase backup
 
 on:
   workflow_dispatch:
@@ -24,9 +24,8 @@ jobs:
       PROJECT: ${{ matrix.project }}
       DB_URL_LEBENSCOCKPIT: ${{ secrets.BACKUP_DB_URL_LEBENSCOCKPIT }}
       DB_URL_RESELLING_MANAGER: ${{ secrets.BACKUP_DB_URL_RESELLING_MANAGER }}
-      RCLONE_CONFIG_B64: ${{ secrets.BACKUP_RCLONE_CONFIG_B64 }}
-      AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
-      DRIVE_FOLDER_ID: ${{ vars.BACKUP_DRIVE_FOLDER_ID }}
+      # Public key only. The private key is stored offline by the owner.
+      AGE_RECIPIENT: age1p255cwy2padre3jyg0umynlkkcdpgl2jx4h7hnsta050zuz7zpgsxhw4ah
     steps:
       - name: Select database URL and check configuration
         shell: bash
@@ -39,12 +38,6 @@ jobs:
           fi
           echo "::add-mask::$url"
           echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
-          for key in RCLONE_CONFIG_B64 AGE_RECIPIENT DRIVE_FOLDER_ID; do
-            if [[ -z "${!key:-}" ]]; then
-              echo "::error::Missing configuration: $key"
-              exit 1
-            fi
-          done
           if [[ -z "$url" ]]; then
             echo "::error::Missing database URL secret for $PROJECT"
             exit 1
@@ -53,29 +46,31 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq age rclone
-      - name: Export, encrypt and upload
+          sudo apt-get install -y -qq age
+      - name: Export and encrypt
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          tmpdir="$(mktemp -d)"
-          trap 'rm -rf "$tmpdir"' EXIT
-          printf '%s' "$RCLONE_CONFIG_B64" | base64 -d > "$tmpdir/rclone.conf"
-          export RCLONE_CONFIG="$tmpdir/rclone.conf"
+          mkdir -p out work
           stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           filename="$PROJECT-$stamp.dump.age"
           # Session pooler (IPv4). User: backup_reader.<project-ref>, read-only role.
           docker run --rm --network host \
             --user "$(id -u):$(id -g)" \
             -e DATABASE_URL \
-            -v "$tmpdir:/backup" \
+            -v "$PWD/work:/backup" \
             postgres:17 \
             pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl \
               --no-large-objects --file=/backup/backup.dump
-          test -s "$tmpdir/backup.dump"
-          age -r "$AGE_RECIPIENT" -o "$tmpdir/$filename" "$tmpdir/backup.dump"
-          test -s "$tmpdir/$filename"
-          rclone copyto "$tmpdir/$filename" "drive:$filename" --drive-root-folder-id "$DRIVE_FOLDER_ID" --checkers 2 --transfers 1
-          rclone lsf "drive:" --drive-root-folder-id "$DRIVE_FOLDER_ID" | grep -Fx "$filename"
-          echo "Encrypted backup uploaded and filename verified."
+          test -s work/backup.dump
+          age -r "$AGE_RECIPIENT" -o "out/$filename" work/backup.dump
+          test -s "out/$filename"
+          rm -rf work
+      - name: Store encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ matrix.project }}
+          path: out/
+          retention-days: 90
+          if-no-files-found: error
