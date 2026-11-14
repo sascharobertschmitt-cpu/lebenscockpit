@@ -1,0 +1,39 @@
+name: Encrypted receipt photo backup (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  receipt-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: https://txxlniprkltweeenmexf.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.BACKUP_STORAGE_SERVICE_ROLE_KEY }}
+      AGE_RECIPIENT: age1p255cwy2padre3jyg0umynlkkcdpgl2jx4h7hnsta050zuz7zpgsxhw4ah
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require configured secret
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::BACKUP_STORAGE_SERVICE_ROLE_KEY missing"; exit 1; }
+      - name: Export, verify and encrypt
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+          export BACKUP_OUTPUT_DIR="$RUNNER_TEMP/receipt-export"
+          node scripts/export-belege.mjs
+          node scripts/verify-belege-export.mjs "$BACKUP_OUTPUT_DIR"
+          tar -C "$BACKUP_OUTPUT_DIR" -cf - manifest.json files | age -r "$AGE_RECIPIENT" -o "$RUNNER_TEMP/belege.tar.age"
+          test -s "$RUNNER_TEMP/belege.tar.age"
+          rm -rf "$BACKUP_OUTPUT_DIR"
+      - name: Upload encrypted archive only
+        uses: actions/upload-artifact@v4
+        with:
+          name: belege-encrypted
+          path: ${{ runner.temp }}/belege.tar.age
+          retention-days: 90
+          if-no-files-found: error
