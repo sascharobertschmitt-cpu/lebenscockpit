@@ -91,3 +91,36 @@ input[type=file]{font-size:12px;max-width:100%}
 .task .s .who{color:var(--accent)}
 @media(max-width:360px){#app{padding-left:12px;padding-right:12px}.card{padding:12px}.stat{padding:12px 10px}.row{gap:8px}.row .amt{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+
+/* Real-data resilience: narrow phones, long titles and large Euro amounts */
+html,body{width:100%;overflow-x:hidden}
+#app,.card,.stat,.hero,.sheet{min-width:0}
+.card{overflow-wrap:anywhere}
+.head h1{overflow-wrap:anywhere}
+.hero .big{font-size:clamp(28px,9vw,47px);overflow-wrap:anywhere;word-break:normal}
+.hero .sm{overflow-wrap:anywhere}
+.stat .v{font-size:clamp(14px,4vw,21px);line-height:1.35;overflow-wrap:anywhere}
+.row .main{overflow-wrap:anywhere}
+.row .amt{max-width:44%;white-space:normal;overflow-wrap:anywhere;text-align:right;line-height:1.35}
+.row .s{overflow-wrap:anywhere}
+.card table{table-layout:auto}
+.card td,.card th{overflow-wrap:anywhere}
+.card td:last-child{font-weight:650}
+.card:has(table){overflow-x:auto;-webkit-overflow-scrolling:touch}
+.card:has(table) table{min-width:300px}
+.card:has(table) table:has(th:nth-child(4)){min-width:450px}
+.card:has(table) table:has(th:nth-child(4)) td,
+.card:has(table) table:has(th:nth-child(4)) th{white-space:nowrap}
+.task .main[data-action],.row .main[data-action]{cursor:pointer;min-height:40px;display:flex;flex-direction:column;justify-content:center}
+.chk{min-width:24px;min-height:24px}
+button,select,input{touch-action:manipulation}
+button:active{filter:brightness(1.08)}
+.sheet{overscroll-behavior:contain;padding-bottom:calc(env(safe-area-inset-bottom) + 26px)}
+.sheet .card{margin-top:8px}
+#modal .sheet:focus-within{scroll-padding-bottom:40px}
+input,select{max-width:100%}
+input[type=date]{color-scheme:dark}
+input::placeholder{color:#8890a1;opacity:1}
+nav button{min-width:0}
+nav button svg{flex:none}
+@media(max-width:340px){#app{padding-left:10px;padding-right:10px}.grid2{gap:8px}.stat{padding:11px 9px}.hero{padding:19px 15px}nav button{font-size:10px}}
