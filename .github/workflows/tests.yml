@@ -1,0 +1,25 @@
+name: Lebenscockpit Tests
+
+on:
+  push:
+    branches: [main, "chore/phase0-tests"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Finanzlogik testen
+        run: node test/logic.test.js
+      - name: Oberfläche testen
+        run: node test/smoke.test.js
