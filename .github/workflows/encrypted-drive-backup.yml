@@ -51,6 +51,7 @@ jobs:
           filename="lebenscockpit-$stamp.dump.age"
           # Database connection string must point to the direct or session pooler endpoint.
           docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
             -e DATABASE_URL \
             -v "$tmpdir:/backup" \
             postgres:17 \
