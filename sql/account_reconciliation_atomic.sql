@@ -14,6 +14,10 @@ DECLARE
   v_amount numeric;
   v_timestamp timestamptz;
 BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Authentication required'; END IF;
+  IF p_erfasst_von IS DISTINCT FROM (auth.jwt()->>'email') THEN
+    RAISE EXCEPTION 'Recorder must match authenticated user';
+  END IF;
   IF p_konto NOT IN ('sascha', 'luna') THEN RAISE EXCEPTION 'Invalid account'; END IF;
   IF p_betrag IS NULL OR p_erfasst_am IS NULL THEN RAISE EXCEPTION 'Missing balance or timestamp'; END IF;
   IF jsonb_typeof(p_zahlungen) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'Invalid payments'; END IF;
@@ -26,6 +30,9 @@ BEGIN
     v_month := (v_payment->>'finanzmonat')::date;
     v_paid := (v_payment->>'bezahlt_am')::date;
     v_amount := (v_payment->>'betrag')::numeric;
+    IF v_id IS NULL OR v_month IS NULL OR v_paid IS NULL OR v_amount IS NULL THEN
+      RAISE EXCEPTION 'Incomplete payment';
+    END IF;
     v_timestamp := (v_payment->>'erfasst_am')::timestamptz;
     SELECT * INTO v_posten FROM public.posten WHERE id = v_id;
     IF NOT FOUND THEN RAISE EXCEPTION 'Payment item not accessible'; END IF;
