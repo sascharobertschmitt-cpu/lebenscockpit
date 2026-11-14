@@ -1,5 +1,8 @@
 -- POSTFLIGHT Wocheneinkauf (20261115100000 Tabellen, 20261115100100 Storage). Nur SELECT.
 -- Erwartung nach beiden Migrationen: ok ist fuer JEDE Zeile true. Nach Teil 1 allein sind nur die Zeilen "S" rot.
+-- ACHTUNG: Die Policy-Pruefungen sind statisch und koennen allgemein formulierte, bereits vorhandene
+-- storage.objects-Policies nicht als Zugriff auf den belege-Bucket ausschliessen. Zusaetzlich
+-- echte anon-/Nichtmitglied-Tests ueber die Storage API ausfuehren.
 SELECT name, ok FROM (VALUES
   ('T1 Tabellen einkauf_limits und einkaeufe vorhanden, RLS aktiv, je eine Policy nur fuer authenticated',
     (SELECT count(*) = 2 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ('einkauf_limits','einkaeufe') AND c.relrowsecurity
@@ -20,7 +23,7 @@ SELECT name, ok FROM (VALUES
   ('S2 genau drei Policies fuer den Bucket (lesen, hochladen, loeschen), nur authenticated, kein UPDATE',
     (SELECT count(*) = 3 FROM pg_policy WHERE polrelid='storage.objects'::regclass AND polname IN ('belege lesen','belege hochladen','belege loeschen')
        AND polroles = ARRAY['authenticated'::regrole::oid] AND polcmd IN ('r','a','d')))
-  ,('S3 keine anonymen Storage-Rechte fuer Belege aus einer weiteren Policy',
+  ,('S3 keine weiteren explizit auf belege bezogenen anon-Policies (keine Garantie gegen allgemeine Policies)',
     NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid='storage.objects'::regclass
       AND p.polname NOT IN ('belege lesen','belege hochladen','belege loeschen')
       AND p.polroles && ARRAY['anon'::regrole::oid, 0::oid]
