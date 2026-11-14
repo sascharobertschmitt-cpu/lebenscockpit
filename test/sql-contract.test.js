@@ -21,3 +21,6 @@ assert.match(finance, /jsonb_typeof\(p_zahlungen\)/i);
 assert.match(finance, /ON CONFLICT \(posten_id,finanzmonat\)/i);
 assert.match(finance, /Payment amount changed/i);
 console.log('SQL draft contract checks passed (not a database test)');
+assert.match(finance, /auth\.uid\(\) IS NULL/i);
+assert.match(finance, /auth\.jwt\(\)->>'email'/i);
+assert.match(finance, /Incomplete payment/i);
