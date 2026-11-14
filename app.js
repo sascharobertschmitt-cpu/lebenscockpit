@@ -11,7 +11,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], showDone: false, loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], showDone: false, folds: {}, loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
@@ -29,7 +29,6 @@
   function fmtD(d) { return d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }); }
   function fmtLong(d) { return d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }); }
   function todayD() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
-  function poss(n) { return /s$/i.test(n) ? n + "'" : n + 's'; }
   var toastTimer;
   function toast(msg) {
     $toast.textContent = msg;
@@ -50,11 +49,13 @@
       sb.from('einnahmen').select('*'),
       sb.from('posten').select('*'),
       sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }).limit(30),
-      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false })
+      sb.from('kontostaende').select('*').eq('konto', 'sascha').order('erfasst_am', { ascending: false }).limit(5),
+      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
+      sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(5)
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data; S.aufgaben = r[4].data;
+    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.aufgaben = r[4].data;
+    S.staende = r[3].data.concat(r[5].data).sort(function (a, b) { return String(b.erfasst_am).localeCompare(String(a.erfasst_am)); });
     S.loaded = true;
   }
   async function reload() {
@@ -123,6 +124,11 @@
     $app.innerHTML = body + nav();
   }
 
+  function fold(key, title, body, openByDefault) {
+    var open = key in S.folds ? S.folds[key] : !!openByDefault;
+    return '<details class="dash-fold" data-fold="' + key + '"' + (open ? ' open' : '') + '><summary>' + title + '</summary><div class="dash-fold-body">' + body + '</div></details>';
+  }
+
   function head(title, sub) {
     return '<div class="head"><h1>' + esc(title) + '</h1><span class="sub">' + esc(sub || '') + '</span></div>';
   }
@@ -133,7 +139,7 @@
     var over = due && due < t;
     var bits = [];
     if (a.zustaendig) bits.push('<span class="who">' + esc(a.zustaendig) + '</span>');
-    if (due) bits.push(over ? '<span style="color:var(--danger)">' + esc(fmtD(due)) + '</span>' : esc(fmtD(due)));
+    if (due) bits.push(over ? '<span class="overdue">' + esc(fmtD(due)) + '</span>' : esc(fmtD(due)));
     if (a.wiederholung) bits.push(esc(WDH[a.wiederholung] || ''));
     return '<div class="row task' + (a.erledigt ? ' paid' : '') + '">' +
       '<input class="chk" type="checkbox" data-action="aufgabe-done" data-id="' + esc(a.id) + '"' + (a.erledigt ? ' checked' : '') + ' aria-label="erledigt">' +
@@ -162,67 +168,58 @@
     return h;
   }
 
+  function cardList(rows, emptyTxt) {
+    return '<div class="card flat">' + (rows.length ? rows.join('') : '<div class="empty">' + emptyTxt + '</div>') + '</div>';
+  }
+
   function viewHeute() {
     var t = todayD();
     var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
-    h += '<details class="dash-fold" open><summary>Finanzlage bis zum Gehalt</summary><div class="dash-fold-body">';
     if (!lage.next) {
       h += '<div class="card">Es ist kein Gehalt eingetragen.</div>';
     } else if (!lage.stand) {
       h += '<div class="hero neutral"><div class="lbl">Noch kein Kontostand</div><div class="big">?</div><div class="sm">Trag deinen aktuellen Kontostand ein, dann rechnet die App.</div></div>';
     } else {
-      var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
-      var l = lage.luna ? Number(lage.luna.betrag) : null;
-      h += '<div class="hero neutral"><div class="lbl">Finanzlage bis ' + esc(fmtD(lage.next.date)) + '</div>';
-      h += '<div class="dashboard-money-pair">' +
-        '<div class="dashboard-money-item"><span>Saschas Konto: ' + (lage.luecke != null ? 'Fehlbetrag' : 'Spielraum') + '</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
-        '<div class="dashboard-money-item"><span>Gemeinsam noch verfügbar</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
-        '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p></div>';
-
+      var minus = lage.luecke != null;
+      h += '<div class="hero' + (minus ? ' bad' : '') + '"><div class="lbl">Saschas ' + (minus ? 'Fehlbetrag' : 'Spielraum') + ' bis ' + esc(fmtD(lage.next.date)) + '</div>' +
+        '<div class="big">' + eur(minus ? -lage.luecke : lage.verfuegbar) + '</div>' +
+        '<div class="sm">Gemeinsam mit Luna: <b class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</b><br>Rechnerisch inklusive Dispo, noch nicht alle Verpflichtungen erfasst.</div></div>';
     }
+    h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
-    h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Kontostände und Hinweise</summary><div class="dash-fold-body">';
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
       var ageTxt = age <= 0 ? 'heute' : age === 1 ? 'gestern' : 'vor ' + age + ' Tagen';
-      h += '<div class="grid2"><div class="stat"><div class="k">Kontostand</div><div class="v">' + eur(Number(lage.stand.betrag)) + '</div><div class="n">Stand ' + ageTxt + '</div></div>' +
+      var info = '<div class="grid2"><div class="stat"><div class="k">Kontostand</div><div class="v">' + eur(Number(lage.stand.betrag)) + '</div><div class="n">Stand ' + ageTxt + '</div></div>' +
         '<div class="stat"><div class="k">Offen bis Gehalt</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div></div>';
-      if (Number(lage.stand.betrag) < 0) {
-        h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
-      }
-      if (age >= 7) h += '<div class="warn">Der Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
+      if (Number(lage.stand.betrag) < 0) info += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
+      if (age >= 7) info += '<div class="warn">Der Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
-      if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
+      if (overdue.length) info += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
+      h += fold('stand', 'Kontostand und Hinweise', info, true);
+      h += fold('rest', 'Restbudget im Detail', restbudget(lage), false);
     }
-    h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Restbudget im Detail</summary><div class="dash-fold-body">';
-    h += restbudget(lage);
-    h += '</div></details>';
-    h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
     var open = S.aufgaben.filter(function (a) { return !a.erledigt; });
     var todayTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) <= t; });
-    var futureTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) > t; }).sort(function (a,b) { return a.faellig.localeCompare(b.faellig); });
+    var futureTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) > t; }).sort(function (a, b) { return a.faellig.localeCompare(b.faellig); });
     var undatedTasks = open.filter(function (a) { return !a.faellig; });
-    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + todayTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
-      (todayTasks.length ? todayTasks.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
-    h += '<details class="dash-fold"><summary>Zukünftige Aufgaben (' + futureTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
-      (futureTasks.length ? futureTasks.map(taskRow).join('') : '<div class="empty">Keine zukünftigen Aufgaben.</div>') + '</div></div></details>';
-    if (undatedTasks.length) h += '<details class="dash-fold"><summary>Aufgaben ohne Termin (' + undatedTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
+    h += fold('heute', 'Aufgaben heute und überfällig <span class="count">' + todayTasks.length + '</span>', cardList(todayTasks.map(taskRow), 'Nichts fällig.'), true);
+    h += fold('spaeter', 'Zukünftige Aufgaben <span class="count">' + futureTasks.length + '</span>', cardList(futureTasks.map(taskRow), 'Keine zukünftigen Aufgaben.'));
+    if (undatedTasks.length) h += fold('ohne', 'Aufgaben ohne Termin <span class="count">' + undatedTasks.length + '</span>', cardList(undatedTasks.map(taskRow), ''));
 
     var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
-    h += '<details class="dash-fold"><summary>Bald fällige Zahlungen (' + soon.length + ')</summary><div class="dash-fold-body"><div class="card">' + (soon.length ? soon.map(function (it) {
+    h += fold('zahlungen', 'Bald fällige Zahlungen <span class="count">' + soon.length + '</span>', cardList(soon.map(function (it) {
       return '<div class="row"><div class="main"><div class="t">' + esc(it.p.name) + '</div><div class="s">' + esc(fmtD(it.date)) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
-    }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
+    }), 'Bis zum nächsten Gehalt ist nichts mit festem Termin offen.'));
 
     var klaeren = S.posten.filter(function (p) { return p.status === 'pruefen'; });
     if (klaeren.length) {
-      h += '<details class="dash-fold"><summary>Noch zu klären (' + klaeren.length + ')</summary><div class="dash-fold-body"><div class="card">' + klaeren.map(function (p) {
+      h += fold('klaeren', 'Noch zu klären <span class="count">' + klaeren.length + '</span>', cardList(klaeren.map(function (p) {
         return '<div class="row"><div class="main" data-action="posten-edit" data-id="' + esc(p.id) + '"><div class="t">' + esc(p.name) + '</div><div class="s">' + esc(p.notiz || 'Betrag oder Termin prüfen') + '</div></div><div class="amt">' + eur(Number(p.betrag)) + '</div></div>';
-      }).join('') + '</div></div></details>';
+      }), ''));
     }
     return h;
   }
@@ -247,11 +244,11 @@
     h += restbudget(L.calcLage(S, t, DISPO));
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
-    h += '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
-      '<tr><td colspan="2" class="s" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">' + einnTxt + '</td></tr>' +
-      '<tr><td>Feste Zahlungen</td><td>' + eur(m.fixkosten) + '</td></tr>' +
-      (m.bar ? '<tr><td colspan="2" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">davon bar reserviert ' + eur(m.bar) + '</td></tr>' : '') +
-      '<tr class="now"><td>Bleibt für Alltag, Klarna, Kreditkarte, Dispozinsen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div>';
+    h += '<div class="card"><div class="restbudget-line"><span>Einnahmen</span><b>' + eur(m.einnahmen) + '</b></div>' +
+      (einnTxt ? '<p class="sub-note">' + einnTxt + '</p>' : '') +
+      '<div class="restbudget-line"><span>Feste Zahlungen</span><b>' + eur(m.fixkosten) + '</b></div>' +
+      (m.bar ? '<p class="sub-note">davon bar reserviert ' + eur(m.bar) + '</p>' : '') +
+      '<div class="restbudget-line total"><span>Bleibt für Alltag, Klarna, Kreditkarte, Dispozinsen</span><b class="' + (m.rest < 0 ? 'money-negative' : 'money-positive') + '">' + eur(m.rest) + '</b></div></div>';
 
     h += '<button data-action="posten-neu">Zahlung hinzufügen</button><p class="note">Klarna und Kreditkarte trägst du als einzelne Zahlung mit Datum ein.</p>';
 
@@ -289,7 +286,7 @@
     if (!any) h += '<div class="card"><div class="empty">Keine offenen Aufgaben.</div></div>';
     var done = S.aufgaben.filter(function (a) { return a.erledigt; }).sort(function (a, b) { return String(b.erledigt_am).localeCompare(String(a.erledigt_am)); }).slice(0, 15);
     if (done.length) {
-      h += '<h2><span data-action="toggle-done" style="cursor:pointer">Erledigt (' + done.length + ') ' + (S.showDone ? 'ausblenden' : 'anzeigen') + '</span></h2>';
+      h += '<h2>Erledigt (' + done.length + ')</h2><button type="button" class="small" data-action="toggle-done">' + (S.showDone ? 'Ausblenden' : 'Anzeigen') + '</button>';
       if (S.showDone) h += '<div class="card">' + done.map(taskRow).join('') + '</div>';
     }
     return h;
@@ -298,7 +295,7 @@
   function viewMehr() {
     return head('Mehr', 'Version ' + VERSION) +
       '<div class="card"><div class="row"><div class="main"><div class="t">Angemeldet als</div><div class="s">' + esc(S.user.email) + '</div></div></div></div>' +
-      '<button data-action="refresh">Daten neu laden</button><div style="height:10px"></div>' +
+      '<button data-action="refresh">Daten neu laden</button><div class="gap"></div>' +
       '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
       '<button class="danger" data-action="logout">Abmelden</button>';
   }
@@ -326,8 +323,8 @@
     setTimeout(function () { var el = document.getElementById('ab-betrag'); if (el) el.focus(); }, 50);
   }
   function abRow(i, checked) {
-    return '<label class="row" style="margin:0;color:var(--text);font-size:16px"><input class="chk" type="checkbox" name="pay" value="' + esc(i.p.id) + '"' + (checked ? ' checked' : '') + '>' +
-      '<span class="main"><span class="t" style="display:block">' + esc(i.p.name) + '</span><span class="s" style="display:block">' + (i.date ? esc(fmtD(i.date)) : 'Termin offen') + '</span></span><span class="amt">' + eur(i.betrag) + '</span></label>';
+    return '<label class="row abrow"><input class="chk" type="checkbox" name="pay" value="' + esc(i.p.id) + '"' + (checked ? ' checked' : '') + '>' +
+      '<span class="main"><span class="t">' + esc(i.p.name) + '</span><span class="s">' + (i.date ? esc(fmtD(i.date)) : 'Termin offen') + '</span></span><span class="amt">' + eur(i.betrag) + '</span></label>';
   }
   async function saveAbgleich(form) {
     var err = form.querySelector('#ab-err');
@@ -364,7 +361,7 @@
       '<label for="pe-s">Status</label><select id="pe-s"><option value="sicher"' + (p.status === 'sicher' ? ' selected' : '') + '>Sicher</option><option value="pruefen"' + (p.status === 'pruefen' ? ' selected' : '') + '>Noch klären</option></select>' +
       '<label for="pe-n">Notiz</label><input id="pe-n" value="' + esc(p.notiz || '') + '">' +
       '<div class="err" id="pe-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>' +
-      '<div style="height:12px"></div>' +
+      '<div class="gap"></div>' +
       (p.rhythmus === 'einmalig' ? '<button class="danger" data-action="posten-delete" data-id="' + esc(p.id) + '">Zahlung löschen</button>' : '<button class="danger" data-action="posten-end" data-id="' + esc(p.id) + '">Posten beenden</button><p class="note">Beenden bedeutet: Ab heute zählt dieser Posten nicht mehr. Bisherige Zahlungen bleiben erhalten.</p>'));
   }
   async function savePosten(form) {
@@ -416,7 +413,7 @@
       '<label for="au-f">Fällig am (optional)</label><input id="au-f" type="date" value="' + esc(a && a.faellig ? a.faellig : '') + '">' +
       '<label for="au-w">Wiederholung</label><select id="au-w">' + opt('', 'Keine', a ? a.wiederholung || '' : '') + opt('taeglich', 'Täglich', a && a.wiederholung) + opt('woechentlich', 'Wöchentlich', a && a.wiederholung) + opt('monatlich', 'Monatlich', a && a.wiederholung) + opt('jaehrlich', 'Jährlich', a && a.wiederholung) + '</select>' +
       '<div class="err" id="au-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>' +
-      (a ? '<div style="height:12px"></div><button class="danger" data-action="aufgabe-delete" data-id="' + esc(a.id) + '">Aufgabe löschen</button>' : ''));
+      (a ? '<div class="gap"></div><button class="danger" data-action="aufgabe-delete" data-id="' + esc(a.id) + '">Aufgabe löschen</button>' : ''));
     setTimeout(function () { var el = document.getElementById('au-t'); if (el && !a) el.focus(); }, 50);
   }
   async function saveAufgabe(form) {
@@ -506,6 +503,10 @@
       run(async function () { var r = await sb.from('aufgaben').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });
     }
   });
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (d && d.dataset && d.dataset.fold) S.folds[d.dataset.fold] = d.open;
+  }, true);
   document.addEventListener('change', function (e) {
     var el = e.target;
     if (!el.dataset) return;

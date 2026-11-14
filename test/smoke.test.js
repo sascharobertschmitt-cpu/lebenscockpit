@@ -82,10 +82,10 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   const app = () => elements.app.innerHTML;
 
   // Heute
-  assert.ok(/Gemeinsam noch verfügbar/.test(app()) && /Saschas Konto: Spielraum/.test(app()), 'Heute zeigt beide großen Geldbeträge');
-  assert.ok(/dashboard-money-pair/.test(app()), 'Geldbeträge nebeneinander');
-  assert.ok(/Zukünftige Aufgaben \(1\)/.test(app()) && /Termin vorbereiten/.test(app()), 'Zukünftige Aufgaben vollständig vorhanden');
-  assert.ok(/Aufgaben ohne Termin \(1\)/.test(app()), 'Aufgaben ohne Termin separat');
+  assert.ok(/Gemeinsam mit Luna/.test(app()) && /Saschas (Spielraum|Fehlbetrag)/.test(app()), 'Heute zeigt beide großen Geldbeträge');
+  assert.ok(/class="hero/.test(app()), 'Geldbetrag als Hero');
+  assert.ok(/Zukünftige Aufgaben <span class="count">1<\/span>/.test(app()) && /Termin vorbereiten/.test(app()), 'Zukünftige Aufgaben vollständig vorhanden');
+  assert.ok(/Aufgaben ohne Termin <span class="count">1<\/span>/.test(app()), 'Aufgaben ohne Termin separat');
   assert.ok(/Kontostand aktualisieren/.test(app()));
   assert.ok(/noch nicht abgehakt/.test(app()), 'Hinweis auf nicht abgehakte Zahlungen');
   assert.ok(/Müll rausstellen/.test(app()));
