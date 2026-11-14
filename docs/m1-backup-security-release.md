@@ -61,3 +61,12 @@ Die Migration ersetzt `ON DELETE CASCADE` durch `ON DELETE RESTRICT` an `posten_
 4. Sicherheitsbefunde priorisiert und kritische behoben.
 5. Unabhängiges Claude-Review auf den GitHub-Diff, inklusive Datenverlust- und Sicherheitsprüfung.
 6. Review-Befunde behoben und erneut getestet; erst danach Merge/Freigabe.
+
+
+## Isolierter technischer Restore-Test (CI)
+
+Der Job `database-integrity` erstellt nach den Datenbankintegritätstests mit `pg_dump` ein Custom-Format-Backup der **synthetischen** Testtabellen, stellt es in einer neuen PostgreSQL-17-Testdatenbank mit `pg_restore` wieder her und prüft die Anzahl der Posten/Zahlungen sowie den wiederhergestellten Fremdschlüssel mit `ON DELETE RESTRICT`. Ein Test mit produktiven Supabase-Daten ist dies **nicht**. Der CI-Dump wird nicht als Artefakt hochgeladen.
+
+**Für echte produktive Backups weiterhin offen:** Plan-/Backup-Verfügbarkeit im Supabase-Dashboard prüfen: https://supabase.com/dashboard/project/txxlniprkltweeenmexf/database/backups/scheduled . Laut Supabase-Dokumentation sind automatische tägliche Backups an kostenpflichtige Pläne gebunden; auf dem Free-Plan empfiehlt Supabase regelmäßige externe logische Dumps. Projektplan und tatsächlich vorhandene Backups wurden noch nicht bestätigt. https://supabase.com/docs/guides/platform/backups
+
+**Kein produktiver Restore ohne gesonderte Freigabe.** Ein Test auf dem Live-Projekt könnte den aktuellen Datenstand überschreiben. Ein belastbarer M1-Abnahmenachweis benötigt eine isolierte, autorisierte Wiederherstellung einer echten Sicherung, Prüfung der Benutzer-/RLS-Funktion und sichere externe Aufbewahrung; ohne dafür geeignete Testumgebung bleibt dieses Gate offen.
