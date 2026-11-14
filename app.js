@@ -551,7 +551,7 @@
       '<label for="ek-datum">Datum</label><input id="ek-datum" type="date" value="' + esc(e ? String(e.datum).slice(0, 10) : L.iso(todayD())) + '" required>' +
       '<label for="ek-notiz">Notiz (optional)</label><input id="ek-notiz" maxlength="200" placeholder="zum Beispiel Rewe" value="' + esc(e ? e.notiz || '' : '') + '">' +
       (e ? '<p class="note">' + (e.beleg_pfad ? 'Ein Foto ist gespeichert und bleibt erhalten.' : 'Fotos lassen sich nur beim Erfassen hinzufügen.') + '</p>' :
-        '<label for="ek-foto">Foto vom Einkaufszettel oder Kassenbon (optional)</label><input id="ek-foto" type="file" accept="image/*" data-action="foto-gewaehlt"><div class="note" id="ek-fotoinfo">Das Foto wird verkleinert und privat gespeichert. Achte darauf, dass keine Kartendaten sichtbar sind.</div>') +
+        '<label for="ek-foto">Bild vom Einkaufszettel oder Kassenbon hochladen (optional)</label><input id="ek-foto" type="file" accept="image/*" data-action="foto-gewaehlt"><div class="note" id="ek-fotoinfo">Kamera, Mediathek oder Screenshot (JPG, PNG, HEIC, WebP). Das Bild wird verkleinert und privat gespeichert. Achte darauf, dass keine Kartendaten sichtbar sind.</div>') +
       '<div class="err" id="ek-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
     setTimeout(function () { var el = document.getElementById('ek-betrag'); if (el) el.focus(); }, 50);
   }
@@ -568,7 +568,9 @@
           var k = Math.min(1, max / Math.max(w, h));
           var c = document.createElement('canvas');
           c.width = Math.round(w * k); c.height = Math.round(h * k);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          var g = c.getContext('2d');
+          g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);   // PNG/WebP mit Transparenz sonst schwarz im JPEG
+          g.drawImage(img, 0, 0, c.width, c.height);
           var q = 0.78;
           (function enc() {
             c.toBlob(function (b) {

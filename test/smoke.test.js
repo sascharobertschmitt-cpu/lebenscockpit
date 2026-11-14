@@ -18,7 +18,7 @@ const document = {
   getElementById: el, visibilityState: 'visible',
   addEventListener(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
   createElement(tag) {
-    if (tag === 'canvas') return { width: 0, height: 0, getContext: () => ({ drawImage() {} }), toBlob(cb, type, q) { cb({ size: 123456, type }); } };
+    if (tag === 'canvas') return { width: 0, height: 0, getContext: () => ({ drawImage() {}, fillRect() {}, set fillStyle(v) { calls.push(['canvas.fill', v]); } }), toBlob(cb, type, q) { cb({ size: 123456, type }); } };
     return { click() {}, remove() {}, set href(v) {}, set download(v) {} };
   },
   body: { appendChild() {} }
@@ -239,6 +239,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   failOps.add('einkaeufe.upsert');
   const nUp = calls.filter((c) => c[0] === 'storage.upload').length, nUps = ups().length;
   await sub(ekForm);
+  assert.ok(calls.some((c) => c[0] === 'canvas.fill' && c[1] === '#fff'), 'Hintergrund wird weiß gefüllt (Transparenz)');
   const uploads = calls.filter((c) => c[0] === 'storage.upload');
   assert.strictEqual(uploads.length, nUp + 1, 'Foto wird hochgeladen');
   const u = uploads[uploads.length - 1];
