@@ -458,6 +458,9 @@
     if (allowed.indexOf(file.type) < 0 || file.size < 1 || file.size > 10485760) {
       err.textContent = 'Nur PDF, JPG, PNG oder WebP bis 10 MB.'; return;
     }
+    if (!window.crypto || !crypto.randomUUID) {
+      err.textContent = 'Sicherer Datei-Upload ist in diesem Browser nicht verfügbar.'; return;
+    }
     var id = crypto.randomUUID();
     var ext = { 'application/pdf':'pdf', 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[file.type];
     var path = S.user.id + '/' + id + '/beleg.' + ext;
