@@ -541,6 +541,7 @@
       S.user = r.data.session.user;
       render();
       await reload();
+      await checkTableSecurity();
     } else {
       renderLogin();
     }
