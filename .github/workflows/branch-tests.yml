@@ -2,7 +2,9 @@ name: Lebenscockpit tests
 on:
   push:
     branches:
-      - claude/focused-tesla-rzq98z
+      - 'claude/**'
+      - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches: [main]
 permissions:
@@ -23,3 +25,5 @@ jobs:
         run: node test/calendar-draft.test.js
       - name: SQL contract checks
         run: node test/sql-contract.test.js
+      - name: Receipt export security tests
+        run: node --test test/belege-export.test.mjs
