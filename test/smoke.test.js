@@ -161,3 +161,5 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(!/NaN|undefined|\[object/.test(all), 'keine NaN oder undefined auf dem Bildschirm');
   console.log('Smoke-Test bestanden');
 })().catch((e) => { console.error(e); process.exit(1); });
+// Seit der RESTRICT-Migration (posten_zahlungen) scheitert das Loeschen eines Postens mit Zahlungen mit 23503; die App erklaert das.
+assert.match(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), /err\.code === '23503'/);

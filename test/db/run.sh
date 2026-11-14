@@ -72,6 +72,7 @@ expect_val() { # name expected actual
 expect_err() { # name pattern output(+status via $?)
   local out="$3"; echo "$out" | grep -qi "$2" && ok "$1" || bad "$1" "Fehler '$2' erwartet, erhalten: $out"; }
 reset() { su "TRUNCATE public.aufgaben, public.posten_zahlungen, public.posten, public.kontostaende CASCADE" >/dev/null; }
+. test/db/cases_security.sh
 . test/db/cases_tasks.sh
 . test/db/cases_finance.sh
 echo; echo "Bestanden: $PASS, Fehlgeschlagen: $FAIL"

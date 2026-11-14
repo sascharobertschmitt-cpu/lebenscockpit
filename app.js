@@ -38,6 +38,7 @@
   }
   function fail(err) {
     var m = (err && err.message) || String(err);
+    if (err && err.code === '23503') { toast('Das geht nicht: Zu diesem Posten gibt es bestätigte Zahlungen. Sie bleiben erhalten, beende den Posten stattdessen.'); return; }
     if (/jwt|token|not authenticated/i.test(m)) { toast('Bitte neu anmelden.'); logout(); return; }
     toast('Fehler: ' + m);
   }

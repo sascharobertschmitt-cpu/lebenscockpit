@@ -3,7 +3,7 @@
 -- sind den Katalog-Metadaten des Produktivprojekts nachgebildet (Stand 14.11.2026, ohne Daten).
 -- private.ist_mitglied() entspricht dem Produktivtext (pg_get_functiondef, 14.11.2026):
 -- Vergleich ohne Beachtung der Gross-/Kleinschreibung. bankumsaetze ist nur fuer die Vollstaendigkeit
--- enthalten; die beiden RPCs beruehren sie nicht.
+-- enthalten (DDL wortgleich aus der Produktivmigration 20261114163857); die RPCs beruehren sie nicht.
 -- Voraussetzung: supabase_stub.sql wurde vorher eingespielt.
 -- Nur Schema, keine Daten (Daten-Fixtures liegen im Test selbst).
 \set ON_ERROR_STOP on
@@ -50,7 +50,7 @@ CREATE INDEX aufgaben_erledigt_faellig_idx ON public.aufgaben (erledigt, faellig
 CREATE TABLE public.bankumsaetze (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   konto text NOT NULL CHECK (konto IN ('sascha','luna')),
-  buchungsdatum date NOT NULL, betrag numeric NOT NULL,
+  buchungsdatum date NOT NULL, betrag numeric(14,2) NOT NULL,
   verwendungszweck text NOT NULL DEFAULT '', gegenpartei text NOT NULL DEFAULT '',
   import_key text NOT NULL, importiert_am timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT bankumsaetze_konto_import_key_key UNIQUE (konto, import_key));
