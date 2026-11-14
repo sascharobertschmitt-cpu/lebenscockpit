@@ -31,7 +31,7 @@ class MigrationGuardTests(unittest.TestCase):
     def test_missing_revoke_fails(self):
         self.assertNotEqual(check(SAFE.replace("REVOKE TRUNCATE, TRIGGER, REFERENCES ON public.safe_items FROM anon, authenticated;", "")).returncode, 0)
     def test_other_table_controls_do_not_mask_unsafe_table(self):
-        self.assertNotEqual(check(SAFE + "\\nCREATE TABLE public.unsafe_items (id bigint);").returncode, 0)
+        self.assertNotEqual(check(SAFE + "\nCREATE TABLE public.unsafe_items (id bigint);").returncode, 0)
     def test_comments_do_not_count(self):
         self.assertNotEqual(check("CREATE TABLE public.unsafe_items (id bigint); -- ENABLE ROW LEVEL SECURITY CREATE POLICY REVOKE TRUNCATE").returncode, 0)
 
