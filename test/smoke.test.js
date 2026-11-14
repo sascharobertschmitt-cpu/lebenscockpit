@@ -112,6 +112,12 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(fs.readFileSync(path.join(root, 'app.js'), 'utf8').includes("sb.rpc('set_task_completion'"));
   assert.ok(fs.readFileSync(path.join(root, 'app.js'), 'utf8').includes("sb.rpc('save_account_reconciliation'"));
 
+  // A completion checkbox must invoke the atomic RPC, not a direct table write.
+  handlers.change.forEach((h) => h({ target: { dataset: { action: 'aufgabe-done', id: 'a1' }, checked: true } }));
+  await tick(); await tick();
+  assert.ok(calls.some((c) => c[0] === 'rpc' && c[1] === 'set_task_completion' &&
+    c[2].p_task_id === 'a1' && c[2].p_done === true), 'Aufgabe uses atomic RPC');
+
   // Mehr
   click({ action: 'tab', tab: 'mehr' });
   assert.ok(/test@example\.com/.test(app()));
