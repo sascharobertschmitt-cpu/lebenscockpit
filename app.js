@@ -335,17 +335,17 @@
     var ts = new Date().toISOString();
     var t = todayD(), cs = L.periodStart(t);
     var konto = form.querySelector('#ab-konto').value;
-    var r = await sb.from('kontostaende').insert({ betrag: n, erfasst_am: ts, erfasst_von: S.user.email, konto: konto });
-    if (r.error) throw r.error;
     var ids = konto === 'luna' ? [] : Array.prototype.map.call(form.querySelectorAll('input[name=pay]:checked'), function (x) { return x.value; });
-    if (ids.length) {
-      var rows = ids.map(function (id) {
-        var p = S.posten.find(function (x) { return x.id === id; });
-        return { posten_id: id, finanzmonat: L.iso(cs), betrag: Number(p.betrag), bezahlt_am: L.iso(t), erfasst_am: ts };
-      });
-      var r2 = await sb.from('posten_zahlungen').upsert(rows, { onConflict: 'posten_id,finanzmonat' });
-      if (r2.error) throw r2.error;
-    }
+    var rows = ids.map(function (id) {
+      var p = S.posten.find(function (x) { return x.id === id; });
+      if (!p) throw new Error('Zahlung nicht mehr vorhanden: ' + id);
+      return { posten_id: id, finanzmonat: L.iso(cs), betrag: Number(p.betrag), bezahlt_am: L.iso(t), erfasst_am: ts };
+    });
+    var r = await sb.rpc('save_account_reconciliation', {
+      p_betrag: n, p_erfasst_am: ts, p_erfasst_von: S.user.email,
+      p_konto: konto, p_zahlungen: rows
+    });
+    if (r.error) throw r.error;
     closeModal();
     await loadAll();
     render();
