@@ -1,0 +1,24 @@
+name: App tests
+on:
+  push:
+    branches: [feature/mobile-design-bank-csv]
+  pull_request:
+    branches: [main]
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check logic.js
+          node --check bank-csv.js
+      - name: Run unit tests
+        run: |
+          node test/logic.test.js
+          node test/bank-csv.test.js
+          node test/smoke.test.js

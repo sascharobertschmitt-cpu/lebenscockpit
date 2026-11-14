@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#14202e">
+<meta name="theme-color" content="#101116">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cockpit">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -40,7 +40,8 @@
       a.src = 'logic.js';
       a.onload = function () {
         var b = document.createElement('script');
-        b.src = 'app.js';
+        b.src = 'bank-csv.js';
+        b.onload = function () { var c = document.createElement('script'); c.src = 'app.js'; document.body.appendChild(c); };
         document.body.appendChild(b);
       };
       document.body.appendChild(a);

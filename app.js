@@ -5,7 +5,8 @@
   var SUPABASE_URL = 'https://txxlniprkltweeenmexf.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_dRrI8RUR1X8ciGA8R8mUxg_CQYAYZua';
   var DISPO = 8000;
-  var VERSION = '1.0';
+  var VERSION = '1.1';
+  var bankPreview = null;
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
@@ -274,9 +275,69 @@
   function viewMehr() {
     return head('Mehr', 'Version ' + VERSION) +
       '<div class="card"><div class="row"><div class="main"><div class="t">Angemeldet als</div><div class="s">' + esc(S.user.email) + '</div></div></div></div>' +
+      '<button data-action="bank-import">Bankumsätze importieren (CSV)</button><p class="note">Sparkasse oder Volksbank: Umsätze vor dem Speichern prüfen. Kontostände und Fixkosten werden nicht automatisch verändert.</p>' +
       '<button data-action="refresh">Daten neu laden</button><div style="height:10px"></div>' +
       '<button data-action="backup">Backup herunterladen</button><p class="note">Das Backup enthält alle Zahlen im Klartext. Bewahre die Datei sicher auf und mach es am besten einmal pro Woche.</p>' +
       '<button class="danger" data-action="logout">Abmelden</button>';
+  }
+
+
+  // ---------- Bankumsätze: CSV-Import ----------
+  function bankImportModal() {
+    bankPreview = null;
+    openModal('<h1>Bankumsätze importieren</h1><p class="note">Die CSV wird lokal eingelesen. Erst nach deiner Bestätigung werden die geprüften Umsätze gespeichert.</p>' +
+      '<label for="csv-konto">Konto</label><select id="csv-konto"><option value="sascha">Sparkasse – Sascha</option><option value="luna">Volksbank – Luna</option></select>' +
+      '<label for="csv-file">CSV-Datei</label><input type="file" id="csv-file" accept=".csv,text/csv,text/plain">' +
+      '<div id="csv-result" class="note">Wähle eine CSV-Datei aus.</div>' +
+      '<div class="actions"><button data-action="close-modal">Schließen</button><button class="primary" id="csv-save" data-action="csv-save" disabled>Importieren</button></div>');
+  }
+  async function bankFileSelected(file) {
+    bankPreview = null;
+    var out = document.getElementById('csv-result'), save = document.getElementById('csv-save');
+    if (!out || !save) return;
+    save.disabled = true;
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { out.textContent = 'Datei zu groß (maximal 5 MB).'; return; }
+    try {
+      var parsed = window.BankCSV.parseCSV(await file.text());
+      var mapping = window.BankCSV.detect(parsed.headers);
+      if (mapping.date < 0 || mapping.amount < 0) {
+        out.textContent = 'Datum/Betrag nicht erkannt. Gefundene Spalten: ' + parsed.headers.join(' | ') + '. Bitte exportiere die Buchungen als CSV mit Buchungstag und Betrag.';
+        return;
+      }
+      var konto = document.getElementById('csv-konto').value;
+      var result = window.BankCSV.prepare(parsed, mapping, konto);
+      if (result.errors.length) {
+        out.textContent = result.errors.length + ' fehlerhafte Zeilen. Import abgebrochen: ' + result.errors.slice(0, 5).join('; ');
+        return;
+      }
+      if (!result.rows.length) { out.textContent = 'Keine gültigen Umsätze gefunden.'; return; }
+      bankPreview = result;
+      var preview = result.rows.slice(0, 5).map(function (r) {
+        return '<div class="row"><div class="main"><div class="t">' + esc(r.gegenpartei || r.verwendungszweck || 'Buchung') + '</div><div class="s">' + esc(r.buchungsdatum) + ' · ' + esc(r.verwendungszweck.slice(0, 90)) + '</div></div><div class="amt">' + eur(r.betrag) + '</div></div>';
+      }).join('');
+      out.innerHTML = '<p><b>' + result.rows.length + ' Umsätze erkannt</b> · ' + esc(konto === 'sascha' ? 'Sparkasse' : 'Volksbank') + '</p><div class="card">' + preview + '</div><p class="note">Vorschau der ersten fünf Buchungen. Gleiche Buchungen werden beim erneuten Import übersprungen. Identische Buchungen am selben Tag mit gleichem Text und Betrag lassen sich nicht sicher unterscheiden.</p>';
+      save.disabled = false;
+    } catch (err) { out.textContent = 'CSV konnte nicht gelesen werden: ' + (err.message || err); }
+  }
+  async function saveBankCSV() {
+    if (!bankPreview || !bankPreview.rows.length) return;
+    var rows = bankPreview.rows, btn = document.getElementById('csv-save');
+    if (btn) btn.disabled = true;
+    var added = 0;
+    try {
+      for (var i = 0; i < rows.length; i += 100) {
+        var part = rows.slice(i, i + 100).map(function (r) {
+          return { konto:r.konto, buchungsdatum:r.buchungsdatum, betrag:r.betrag, verwendungszweck:r.verwendungszweck, gegenpartei:r.gegenpartei, import_key:r.import_key };
+        });
+        var r = await sb.from('bankumsaetze').upsert(part, { onConflict:'konto,import_key', ignoreDuplicates:true });
+        if (r.error) throw r.error;
+        added += part.length;
+      }
+      bankPreview = null;
+      closeModal();
+      toast(added + ' Umsätze verarbeitet; vorhandene übersprungen');
+    } catch (e) { if (btn) btn.disabled = false; fail(e); }
   }
 
   // ---------- Fenster ----------
@@ -438,10 +499,10 @@
   async function backup() {
     var r = await Promise.all([
       sb.from('einnahmen').select('*'), sb.from('posten').select('*'), sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*')
+      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*'), sb.from('bankumsaetze').select('*')
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data };
+    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data, bankumsaetze: r[5].data };
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -470,6 +531,8 @@
     else if (a === 'toggle-done') { S.showDone = !S.showDone; render(); }
     else if (a === 'refresh') run(async function () { await loadAll(); render(); toast('Aktualisiert'); });
     else if (a === 'backup') run(backup);
+    else if (a === 'bank-import') bankImportModal();
+    else if (a === 'csv-save') run(saveBankCSV);
     else if (a === 'logout') logout();
     else if (a === 'posten-delete') {
       if (!confirm('Diese Zahlung wirklich löschen?')) return;
@@ -485,6 +548,8 @@
   document.addEventListener('change', function (e) {
     var el = e.target;
     if (!el.dataset) return;
+    if (el.id === 'csv-file') { run(function () { return bankFileSelected(el.files && el.files[0]); }); return; }
+    if (el.id === 'csv-konto') { bankPreview = null; var b = document.getElementById('csv-save'); if (b) b.disabled = true; var o = document.getElementById('csv-result'); if (o) o.textContent = 'Konto geändert: Bitte CSV-Datei erneut auswählen.'; return; }
     if (el.dataset.action === 'toggle-paid') run(function () { return togglePaid(el.dataset.id, el.checked); });
     else if (el.dataset.action === 'aufgabe-done') run(function () { return aufgabeDone(el.dataset.id, el.checked); });
   });
