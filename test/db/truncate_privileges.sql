@@ -69,18 +69,24 @@ BEGIN
   END LOOP;
 END $$;
 
--- 2) Normale App-Rechte bleiben erhalten (RLS regelt die Zeilen)
+-- 2) Normale App-Rechte (authenticated) bleiben erhalten, RLS regelt die Zeilen
 DO $$
 DECLARE r text; t record; p text;
 BEGIN
   FOR t IN SELECT c.oid, c.relname FROM pg_class c
            WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') LOOP
-    FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+    FOREACH r IN ARRAY ARRAY['authenticated','service_role'] LOOP
       FOREACH p IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE'] LOOP
         IF NOT has_table_privilege(r, t.oid, p) THEN
           RAISE EXCEPTION '% faelschlich entfernt fuer % auf public.%', p, r, t.relname;
         END IF;
       END LOOP;
+    END LOOP;
+    -- anon hat gar keine Tabellenrechte mehr
+    FOREACH p IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE'] LOOP
+      IF has_table_privilege('anon', t.oid, p) THEN
+        RAISE EXCEPTION 'anon hat noch % auf public.%', p, t.relname;
+      END IF;
     END LOOP;
   END LOOP;
 END $$;
@@ -107,8 +113,8 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 4) RLS unveraendert: authenticated (Policy) darf lesen/schreiben, anon und
---    mitglieder (ohne Policy) sehen nichts
+-- 4) RLS unveraendert: authenticated (Policy) darf lesen/schreiben, mitglieder
+--    (ohne Policy) liefert nichts, anon scheitert schon an den Tabellenrechten
 BEGIN;
 SET LOCAL ROLE authenticated;
 DO $$ BEGIN
@@ -121,7 +127,11 @@ END $$;
 RESET ROLE;
 SET LOCAL ROLE anon;
 DO $$ BEGIN
-  IF (SELECT count(*) FROM public.einnahmen) <> 0 THEN RAISE EXCEPTION 'anon sieht einnahmen'; END IF;
+  BEGIN
+    PERFORM count(*) FROM public.einnahmen;
+    RAISE EXCEPTION 'anon darf einnahmen lesen' USING ERRCODE = 'XX000';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
 END $$;
 ROLLBACK;
 

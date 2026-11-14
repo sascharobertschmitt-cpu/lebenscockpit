@@ -5,8 +5,11 @@
 -- nicht der Row Level Security. anon/authenticated bekommen sie in Supabase ueber
 -- Default-Privileges automatisch auf jede neue public-Tabelle.
 --
--- Unveraendert bleiben SELECT/INSERT/UPDATE/DELETE sowie alle RLS-Policies;
--- service_role und postgres werden nicht angefasst.
+-- Zusaetzlich verliert anon ALLE Tabellenrechte: anon hat auf keiner Tabelle eine Policy,
+-- die App greift nur nach der Anmeldung (Rolle authenticated) auf Tabellen zu.
+--
+-- Unveraendert bleiben fuer authenticated SELECT/INSERT/UPDATE/DELETE sowie alle
+-- RLS-Policies; service_role und postgres werden nicht angefasst.
 BEGIN;
 
 -- 1) Alle bestehenden Tabellen in public (nicht nur eine feste Liste), auch Rechte an PUBLIC.
@@ -17,7 +20,11 @@ REVOKE TRUNCATE, REFERENCES, TRIGGER
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE TRUNCATE, REFERENCES, TRIGGER ON TABLES FROM PUBLIC, anon, authenticated;
 
--- 3) MAINTAIN existiert erst ab PostgreSQL 17 (erlaubt u. a. LOCK TABLE, VACUUM, REINDEX).
+-- 3) anon: keine Tabellenrechte, weder heute noch auf neuen Tabellen.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon;
+
+-- 4) MAINTAIN existiert erst ab PostgreSQL 17 (erlaubt u. a. LOCK TABLE, VACUUM, REINDEX).
 DO $$
 BEGIN
   IF current_setting('server_version_num')::int >= 170000 THEN
