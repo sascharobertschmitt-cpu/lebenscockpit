@@ -102,6 +102,7 @@ jobs:
           docker run --rm --network host -e PGHOST=127.0.0.1 -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -v "$RUNNER_TEMP:/backup" postgres:17 pg_dump --format=custom --no-owner --no-acl --schema=public --file=/backup/lebenscockpit-ci.dump
           test -s "$RUNNER_TEMP/lebenscockpit-ci.dump"
           createdb lebenscockpit_restore
+          psql -v ON_ERROR_STOP=1 -d lebenscockpit_restore -c 'DROP SCHEMA public CASCADE'
           docker run --rm --network host -e PGHOST=127.0.0.1 -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -v "$RUNNER_TEMP:/backup" postgres:17 pg_restore --exit-on-error --no-owner --no-acl -d lebenscockpit_restore /backup/lebenscockpit-ci.dump
           psql -v ON_ERROR_STOP=1 -d lebenscockpit_restore <<'SQL'
           DO $$
