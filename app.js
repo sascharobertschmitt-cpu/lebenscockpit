@@ -175,17 +175,11 @@
     } else {
       var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
       var l = lage.luna ? Number(lage.luna.betrag) : null;
-      if (lage.luecke != null) {
-        var sub = 'Kontostand ' + eur(Number(lage.stand.betrag)) + ' plus Dispo ' + eur0(DISPO) + ' minus ' + eur(lage.offen + lage.nachStand) + ' offene Zahlungen.';
-        h += '<div class="hero bad"><div class="lbl">Auf Saschas Konto fehlen bis ' + esc(fmtD(lage.next.date)) + '</div><div class="big">' + eur0(lage.luecke) + '</div><div class="sm">' + sub + '</div></div>';
-      } else {
-        h += '<div class="hero"><div class="lbl">Frei verfügbar pro Tag</div><div class="big">' + eur0(lage.tagesbudget) + '</div>' +
-          '<div class="sm">' + eur0(lage.verfuegbar) + ' Spielraum nach offenen Zahlungen (inkl. Dispo), ' + lage.days + (lage.days === 1 ? ' Tag' : ' Tage') + ' bis ' + esc(who) + '</div></div>';
-      }
+      h += '<div class="hero neutral"><div class="lbl">Finanzlage bis ' + esc(fmtD(lage.next.date)) + '</div>';
       h += '<div class="dashboard-money-pair">' +
         '<div class="dashboard-money-item"><span>Saschas Konto: ' + (lage.luecke != null ? 'Fehlbetrag' : 'Spielraum') + '</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
         '<div class="dashboard-money-item"><span>Gemeinsam noch verfügbar</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
-        '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p>';
+        '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p></div>';
 
     }
 
