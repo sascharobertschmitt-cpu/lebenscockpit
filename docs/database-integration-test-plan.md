@@ -62,7 +62,7 @@ Automatisiert in `test/db/run.sh` (Schema: `test/db/schema_baseline.sql` + `supa
 - SQL nutzte `CURRENT_DATE` (UTC); die App rechnet mit lokalem Datum. Neu: Datum in `Europe/Berlin`.
 
 **Offen / bewusst nicht geaendert**
-- Finanzabgleich: Idempotenz ist ueber die optionale `p_request_id` umgesetzt (Spalte `kontostaende.request_id`, partieller Unique-Index). Die App ruft die RPC noch nicht auf; beim Einbau muss sie je Abgleich einmal eine UUID erzeugen und bei Wiederholung wiederverwenden. Ohne ID bleibt das alte, nicht idempotente Verhalten.
+- Finanzabgleich: Idempotenz ist ueber die optionale `p_request_id` umgesetzt (Spalte `kontostaende.request_id`, partieller Unique-Index). Die App erzeugt je Abgleich einmal beim Oeffnen des Fensters eine UUID (`S.abgleichId`), sendet sie als `p_request_id` und verwendet sie bei Wiederholung nach Fehlern erneut; erst nach Erfolg wird sie verworfen. Ohne ID bliebe das alte, nicht idempotente Verhalten (nur noch fuer Altaufrufer).
 - Das Testschema ist ein Nachbau (inkl. nachgebildetem `private.ist_mitglied()`); vor Produktivfreigabe gegen die echten Migrationen abgleichen. `supabase/migrations` (RESTRICT-Fix fuer `posten_zahlungen`) liegt auf einem anderen Branch und ist hier nicht getestet.
 - `auto_faellig` und `request_id` sind neue Spalten: Migration vor Produktivnutzung reviewen.
 - Echte Supabase-Auth/JWT-Verifikation ist nicht Teil des Tests (Claims werden simuliert).

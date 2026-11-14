@@ -56,6 +56,7 @@ sandbox.supabase = {
       from,
       rpc: async (name, args) => {
         calls.push(['rpc', name, args]);
+        if (name === 'save_account_reconciliation' && sandbox.__failNextRpc) { sandbox.__failNextRpc = false; return { data: null, error: { message: 'Netzfehler' } }; }
         return { data: null, error: null };
       },
       auth: {
@@ -130,6 +131,26 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(!/NaN|undefined/.test(m), 'keine Platzhalterfehler im Fenster');
   const checked = (m.match(/name="pay" value="[^"]+" checked/g) || []).length;
   assert.strictEqual(checked, 13, 'genau die 13 Zahlungen mit vergangenem Termin sind vorausgewählt');
+
+  // Abgleich: stabile p_request_id je Abgleich
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const fields = { '#ab-betrag': { value: '1840,50' }, '#ab-minus': { checked: false }, '#ab-konto': { value: 'sascha' }, '#ab-err': { textContent: '' } };
+  const payIds = (m.match(/name="pay" value="([^"]+)" checked/g) || []).map((x) => x.match(/value="([^"]+)"/)[1]);
+  const abForm = { dataset: { form: 'abgleich' }, querySelector: (q) => fields[q], querySelectorAll: () => payIds.map((value) => ({ value })) };
+  const submit = () => { handlers.submit.forEach((h) => h({ target: abForm, preventDefault() {} })); return tick().then(tick); };
+  const abCalls = () => calls.filter((c) => c[0] === 'rpc' && c[1] === 'save_account_reconciliation');
+  sandbox.__failNextRpc = true;
+  await submit();               // schlägt fehl, Fenster bleibt offen
+  await submit();               // Wiederholung
+  assert.strictEqual(abCalls().length, 2);
+  const id1 = abCalls()[0][2].p_request_id;
+  assert.ok(UUID.test(id1), 'p_request_id ist eine UUID v4: ' + id1);
+  assert.strictEqual(abCalls()[1][2].p_request_id, id1, 'Wiederholung nutzt dieselbe p_request_id');
+  assert.strictEqual(abCalls()[1][2].p_zahlungen.length, payIds.length);
+  click({ action: 'abgleich' }); // neuer Abgleich nach Erfolg
+  await submit();
+  const id2 = abCalls()[2][2].p_request_id;
+  assert.ok(UUID.test(id2) && id2 !== id1, 'Neuer Abgleich bekommt neue p_request_id');
 
   // Posten bearbeiten
   click({ action: 'posten-edit', id: 'energis' });

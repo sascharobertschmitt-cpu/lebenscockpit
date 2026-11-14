@@ -304,7 +304,18 @@
   function openModal(html) { $modal.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + html + '</div>'; }
   function closeModal() { $modal.innerHTML = ''; }
 
+  // Stabile UUID je Abgleich: einmal beim Öffnen des Fensters erzeugt, bei Wiederholung (Doppeltipp, Netzfehler) unverändert.
+  function newRequestId() {
+    var c = window.crypto || window.msCrypto;
+    if (c && c.randomUUID) return c.randomUUID();
+    var b = new Uint8Array(16);
+    if (c && c.getRandomValues) c.getRandomValues(b); else for (var k = 0; k < 16; k++) b[k] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+  }
   function modalAbgleich() {
+    S.abgleichId = newRequestId();
     var t = todayD(), cs = L.periodStart(t);
     var items = L.itemsForPeriod(S, cs, t).filter(function (i) { return !i.paid && i.p.zahlung === 'konto'; });
     var past = items.filter(function (i) { return i.date && i.date <= t; });
@@ -343,9 +354,10 @@
     });
     var r = await sb.rpc('save_account_reconciliation', {
       p_betrag: n, p_erfasst_am: ts, p_erfasst_von: S.user.email,
-      p_konto: konto, p_zahlungen: rows
+      p_konto: konto, p_zahlungen: rows, p_request_id: S.abgleichId || (S.abgleichId = newRequestId())
     });
     if (r.error) throw r.error;
+    S.abgleichId = null;
     closeModal();
     await loadAll();
     render();
