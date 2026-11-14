@@ -1,0 +1,14 @@
+const assert = require('assert');
+const {eventForTask,nextDay} = require('../calendar-draft.js');
+assert.strictEqual(nextDay('2026-12-31'), '2027-01-01');
+assert.strictEqual(eventForTask({titel:'Test',faellig:null}), null);
+assert.strictEqual(eventForTask({titel:'Test',faellig:'2026-11-17',erledigt:true}), null);
+const allDay = eventForTask({titel:'Müll',zustaendig:'Luna',faellig:'2026-11-17'});
+assert.deepStrictEqual(allDay.start,{date:'2026-11-17'});
+assert.deepStrictEqual(allDay.end,{date:'2026-11-18'});
+assert.deepStrictEqual(allDay.reminders,{useDefault:true});
+const timed = eventForTask({titel:'Müll',zustaendig:'Luna',faellig:'2026-11-17',uhrzeit:'19:00'});
+assert.strictEqual(timed.start.timeZone,'Europe/Berlin');
+assert.strictEqual(timed.reminders.overrides[0].minutes,60);
+assert.throws(()=>eventForTask({titel:'Test',faellig:'2026-11-17',uhrzeit:'25:00'}));
+console.log('Calendar draft tests passed');
