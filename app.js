@@ -122,7 +122,15 @@
     }).join('') + '</nav>';
   }
 
+  function rememberFolds() {
+    $app.querySelectorAll('details[data-fold]').forEach(function (el) {
+      foldState[el.dataset.fold] = el.open;
+    });
+    try { window.localStorage.setItem('cockpit-folds', JSON.stringify(foldState)); } catch (err) {}
+  }
+
   function render() {
+    rememberFolds();
     if (!S.user) return renderLogin();
     var body = '';
     if (!S.loaded) body = '<p class="boot">Lädt…</p>';
@@ -489,6 +497,7 @@
   }
 
   // ---------- Ereignisse ----------
+  window.addEventListener('pagehide', rememberFolds);
   // toggle blubbert nicht; Capture erfasst auch die dynamisch gerenderten Bereiche.
   document.addEventListener('toggle', function (e) {
     var el = e.target;

@@ -11,7 +11,7 @@ const elements = {};
 function el(id) {
   return elements[id] || (elements[id] = {
     id, innerHTML: '', textContent: '', classList: { add() {}, remove() {} },
-    focus() {}, querySelector() { return null; }
+    focus() {}, querySelector() { return null; }, querySelectorAll() { return []; }
   });
 }
 const document = {
@@ -46,6 +46,7 @@ const saved = { 'cockpit-folds': JSON.stringify({ 'today-budget': true }) };
 const sandbox = {
   localStorage: { getItem(key) { return saved[key] || null; }, setItem(key, value) { saved[key] = value; } },
   document, console, Intl, Date, Math, Number, String, Object, Array, JSON, Promise, setTimeout, clearTimeout, File: class {},
+  addEventListener(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
   navigator: {}, URL: { createObjectURL() { return ''; }, revokeObjectURL() {} },
   confirm: () => true, scrollTo() {},
   window: null
