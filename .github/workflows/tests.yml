@@ -25,3 +25,68 @@ jobs:
         run: node test/edge.test.js
       - name: Oberfläche testen
         run: node test/smoke.test.js
+
+  database-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testonly
+          POSTGRES_DB: lebenscockpit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: testonly
+      PGDATABASE: lebenscockpit_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testtabellen anlegen
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE public.posten (id uuid PRIMARY KEY);
+          CREATE TABLE public.posten_zahlungen (
+            id uuid PRIMARY KEY,
+            posten_id uuid NOT NULL,
+            CONSTRAINT posten_zahlungen_posten_id_fkey
+              FOREIGN KEY (posten_id) REFERENCES public.posten(id) ON DELETE CASCADE
+          );
+          INSERT INTO public.posten VALUES
+            ('00000000-0000-0000-0000-000000000001'),
+            ('00000000-0000-0000-0000-000000000002');
+          INSERT INTO public.posten_zahlungen VALUES
+            ('00000000-0000-0000-0000-000000000003',
+             '00000000-0000-0000-0000-000000000001');
+          SQL
+      - name: Historien-Schutzmigration anwenden
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114110000_protect_payment_history.sql
+      - name: Löschen mit Historie muss scheitern
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            BEGIN
+              DELETE FROM public.posten WHERE id='00000000-0000-0000-0000-000000000001';
+              RAISE EXCEPTION 'Löschen mit Historie wurde nicht verhindert';
+            EXCEPTION WHEN foreign_key_violation THEN
+              NULL;
+            END;
+            IF (SELECT count(*) FROM public.posten_zahlungen) <> 1 THEN
+              RAISE EXCEPTION 'Zahlungshistorie verändert';
+            END IF;
+            DELETE FROM public.posten WHERE id='00000000-0000-0000-0000-000000000002';
+            IF EXISTS (SELECT 1 FROM public.posten WHERE id='00000000-0000-0000-0000-000000000002') THEN
+              RAISE EXCEPTION 'Löschen ohne Historie fehlgeschlagen';
+            END IF;
+          END $$;
+          SQL
