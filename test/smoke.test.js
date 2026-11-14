@@ -17,8 +17,8 @@ function el(id) {
 const document = {
   getElementById: el, visibilityState: 'visible',
   addEventListener(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
-  createElement() { return { click() {}, remove() {}, set href(v) {}, set download(v) {} }; },
-  body: { appendChild() {} }
+  createElement() { return { click() {}, remove() {}, setAttribute() {}, addEventListener() {}, focus() {}, set href(v) {}, set download(v) {} }; },
+  body: { appendChild(node) { if (node.id) elements[node.id] = node; } }
 };
 
 const db = {
@@ -53,6 +53,7 @@ sandbox.supabase = {
   createClient() {
     return {
       from,
+      rpc: async (name) => ({ data: name === 'table_security_audit' ? [{ table_name: 'test_table', issue: 'Neue, noch nicht geprüfte Tabelle' }] : [], error: null }),
       auth: {
         getSession: async () => ({ data: { session: { user } } }),
         onAuthStateChange() {}, signOut: async () => ({}), signInWithPassword: async () => ({ data: { user }, error: null })
@@ -79,6 +80,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
 (async () => {
   await tick(); await tick();
   const app = () => elements.app.innerHTML;
+  assert.ok(elements['security-warning'], 'Sicherheitswarnung erscheint bei ungeprüfter Tabelle');
 
   // Heute
   assert.ok(/Frei verfügbar pro Tag/.test(app()), 'Heute zeigt das Tagesbudget');
