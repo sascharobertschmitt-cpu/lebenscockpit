@@ -16,10 +16,10 @@
   const round2 = (x) => Math.round(x * 100) / 100;
 
   function parseBetrag(s) {
-    let t = String(s == null ? '' : s).replace(/[€\s]/g, '');
+    let t = String(s == null ? '' : s).replace(/[€\s]/g, '').replace(/−/g, '-');
     if (t === '') return NaN;
     if (t.indexOf(',') !== -1) t = t.replace(/\./g, '').replace(',', '.');
-    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    else if (/^[+-]?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
     const n = Number(t);
     return Number.isFinite(n) ? n : NaN;
   }

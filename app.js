@@ -5,16 +5,27 @@
   var SUPABASE_URL = 'https://txxlniprkltweeenmexf.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_dRrI8RUR1X8ciGA8R8mUxg_CQYAYZua';
   var DISPO = 8000;
-  var VERSION = '1.0';
+  var VERSION = '1.1';
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], showDone: false, loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
+
+  var foldState = {};
+  try {
+    var savedFolds = JSON.parse(window.localStorage.getItem('cockpit-folds') || '{}');
+    if (savedFolds && typeof savedFolds === 'object' && !Array.isArray(savedFolds)) foldState = savedFolds;
+  } catch (e) { /* Die Ansicht funktioniert auch ohne verfügbaren Browserspeicher. */ }
+
+  function foldStart(key, title, defaultOpen) {
+    var open = typeof foldState[key] === 'boolean' ? foldState[key] : !!defaultOpen;
+    return '<details class="dash-fold" data-fold="' + esc(key) + '"' + (open ? ' open' : '') + '><summary>' + title + '</summary><div class="dash-fold-body">';
+  }
 
   // ---------- Helfer ----------
   function esc(s) {
@@ -167,7 +178,7 @@
     var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
-    h += '<details class="dash-fold" open><summary>Finanzlage bis zum Gehalt</summary><div class="dash-fold-body">';
+    h += foldStart('today-finances', 'Finanzlage bis zum Gehalt', true);
     if (!lage.next) {
       h += '<div class="card">Es ist kein Gehalt eingetragen.</div>';
     } else if (!lage.stand) {
@@ -184,7 +195,7 @@
     }
 
     h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Kontostände und Hinweise</summary><div class="dash-fold-body">';
+    h += foldStart('today-balances', 'Kontostände und Hinweise');
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
       var ageTxt = age <= 0 ? 'heute' : age === 1 ? 'gestern' : 'vor ' + age + ' Tagen';
@@ -198,7 +209,7 @@
       if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
     h += '</div></details>';
-    h += '<details class="dash-fold"><summary>Restbudget im Detail</summary><div class="dash-fold-body">';
+    h += foldStart('today-budget', 'Restbudget im Detail');
     h += restbudget(lage);
     h += '</div></details>';
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
@@ -207,20 +218,20 @@
     var todayTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) <= t; });
     var futureTasks = open.filter(function (a) { return a.faellig && L.parseISO(a.faellig) > t; }).sort(function (a,b) { return a.faellig.localeCompare(b.faellig); });
     var undatedTasks = open.filter(function (a) { return !a.faellig; });
-    h += '<details class="dash-fold" open><summary>Aufgaben heute und überfällig (' + todayTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+    h += foldStart('today-due', 'Aufgaben heute und überfällig (' + todayTasks.length + ')', true) + '<div class="card">' +
       (todayTasks.length ? todayTasks.map(taskRow).join('') : '<div class="empty">Nichts fällig.</div>') + '</div></div></details>';
-    h += '<details class="dash-fold"><summary>Zukünftige Aufgaben (' + futureTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' +
+    h += foldStart('today-future', 'Zukünftige Aufgaben (' + futureTasks.length + ')', false) + '<div class="card">' +
       (futureTasks.length ? futureTasks.map(taskRow).join('') : '<div class="empty">Keine zukünftigen Aufgaben.</div>') + '</div></div></details>';
-    if (undatedTasks.length) h += '<details class="dash-fold"><summary>Aufgaben ohne Termin (' + undatedTasks.length + ')</summary><div class="dash-fold-body"><div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
+    if (undatedTasks.length) h += foldStart('today-undated', 'Aufgaben ohne Termin (' + undatedTasks.length + ')', false) + '<div class="card">' + undatedTasks.map(taskRow).join('') + '</div></div></details>';
 
     var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
-    h += '<details class="dash-fold"><summary>Bald fällige Zahlungen (' + soon.length + ')</summary><div class="dash-fold-body"><div class="card">' + (soon.length ? soon.map(function (it) {
+    h += foldStart('today-payments', 'Bald fällige Zahlungen (' + soon.length + ')', false) + '<div class="card">' + (soon.length ? soon.map(function (it) {
       return '<div class="row"><div class="main"><div class="t">' + esc(it.p.name) + '</div><div class="s">' + esc(fmtD(it.date)) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
     }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
 
     var klaeren = S.posten.filter(function (p) { return p.status === 'pruefen'; });
     if (klaeren.length) {
-      h += '<details class="dash-fold"><summary>Noch zu klären (' + klaeren.length + ')</summary><div class="dash-fold-body"><div class="card">' + klaeren.map(function (p) {
+      h += foldStart('today-clarify', 'Noch zu klären (' + klaeren.length + ')', false) + '<div class="card">' + klaeren.map(function (p) {
         return '<div class="row"><div class="main" data-action="posten-edit" data-id="' + esc(p.id) + '"><div class="t">' + esc(p.name) + '</div><div class="s">' + esc(p.notiz || 'Betrag oder Termin prüfen') + '</div></div><div class="amt">' + eur(Number(p.betrag)) + '</div></div>';
       }).join('') + '</div></div></details>';
     }
@@ -281,16 +292,15 @@
     ];
     var h = head('Aufgaben', open.length + ' offen') + '<button class="primary" data-action="aufgabe-neu">Aufgabe hinzufügen</button>';
     var any = false;
-    groups.forEach(function (g) {
+    groups.forEach(function (g, index) {
       if (!g[1].length) return;
       any = true;
-      h += '<h2>' + g[0] + '</h2><div class="card">' + g[1].map(taskRow).join('') + '</div>';
+      h += foldStart('tasks-' + index, g[0] + ' (' + g[1].length + ')', index < 2) + '<div class="card">' + g[1].map(taskRow).join('') + '</div></div></details>';
     });
     if (!any) h += '<div class="card"><div class="empty">Keine offenen Aufgaben.</div></div>';
-    var done = S.aufgaben.filter(function (a) { return a.erledigt; }).sort(function (a, b) { return String(b.erledigt_am).localeCompare(String(a.erledigt_am)); }).slice(0, 15);
+    var done = S.aufgaben.filter(function (a) { return a.erledigt; }).sort(function (a, b) { return String(b.erledigt_am).localeCompare(String(a.erledigt_am)); });
     if (done.length) {
-      h += '<h2><span data-action="toggle-done" style="cursor:pointer">Erledigt (' + done.length + ') ' + (S.showDone ? 'ausblenden' : 'anzeigen') + '</span></h2>';
-      if (S.showDone) h += '<div class="card">' + done.map(taskRow).join('') + '</div>';
+      h += foldStart('tasks-done', 'Erledigt (' + done.length + ')') + '<div class="card">' + done.map(taskRow).join('') + '</div></div></details>';
     }
     return h;
   }
@@ -478,6 +488,14 @@
   }
 
   // ---------- Ereignisse ----------
+  // toggle blubbert nicht; Capture erfasst auch die dynamisch gerenderten Bereiche.
+  document.addEventListener('toggle', function (e) {
+    var el = e.target;
+    if (!el.dataset || !el.dataset.fold || el.isConnected === false) return;
+    foldState[el.dataset.fold] = el.open;
+    try { window.localStorage.setItem('cockpit-folds', JSON.stringify(foldState)); } catch (err) {}
+  }, true);
+
   document.addEventListener('click', function (e) {
     if (e.target === $modal) { closeModal(); return; }
     var el = e.target.closest('[data-action]');
@@ -491,7 +509,6 @@
     else if (a === 'aufgabe-neu') modalAufgabe(null);
     else if (a === 'aufgabe-edit') modalAufgabe(id);
     else if (a === 'close-modal') closeModal();
-    else if (a === 'toggle-done') { S.showDone = !S.showDone; render(); }
     else if (a === 'refresh') run(async function () { await loadAll(); render(); toast('Aktualisiert'); });
     else if (a === 'backup') run(backup);
     else if (a === 'logout') logout();

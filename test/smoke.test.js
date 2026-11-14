@@ -42,7 +42,9 @@ function from(table) {
   return q;
 }
 const user = { email: 'test@example.com' };
+const saved = { 'cockpit-folds': JSON.stringify({ 'today-budget': true }) };
 const sandbox = {
+  localStorage: { getItem(key) { return saved[key] || null; }, setItem(key, value) { saved[key] = value; } },
   document, console, Intl, Date, Math, Number, String, Object, Array, JSON, Promise, setTimeout, clearTimeout, File: class {},
   navigator: {}, URL: { createObjectURL() { return ''; }, revokeObjectURL() {} },
   confirm: () => true, scrollTo() {},
@@ -91,6 +93,18 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(/Müll rausstellen/.test(app()));
   assert.ok(/Noch zu klären/.test(app()) === false, 'Fixture hat keine Posten mit Status prüfen');
   assert.ok(!/Paket abholen <b>/.test(app()), 'HTML in Titeln wird maskiert');
+
+  assert.ok(/data-fold="today-budget" open/.test(app()), 'Gespeicherter Klappzustand wird beim Start geladen');
+
+  // Geöffnete Bereiche bleiben auch nach Tabwechseln erhalten.
+  handlers.toggle.forEach((h) => h({ target: { dataset: { fold: 'today-future' }, open: true } }));
+  handlers.toggle.forEach((h) => h({ target: { dataset: { fold: 'today-finances' }, open: false } }));
+  assert.strictEqual(JSON.parse(saved['cockpit-folds'])['today-future'], true, 'Klappzustand wird gespeichert');
+  click({ action: 'tab', tab: 'aufgaben' });
+  assert.ok(/data-fold="tasks-2"/.test(app()), 'Zukünftige Aufgaben sind einklappbar');
+  click({ action: 'tab', tab: 'heute' });
+  assert.ok(/data-fold="today-future" open/.test(app()), 'Zukünftige Aufgaben bleiben geöffnet');
+  assert.ok(/data-fold="today-finances"><summary>/.test(app()), 'Finanzlage bleibt geschlossen');
 
   // Geld
   click({ action: 'tab', tab: 'geld' });
