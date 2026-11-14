@@ -57,11 +57,29 @@ SQL
 )
 expect_err "authenticated ohne JWT: abgelehnt" "Authentication required\|invalid input" "$out"
 
-# Parallel: zwei identische Abgleiche gleichzeitig
+# Parallel: zwei identische Abgleiche gleichzeitig, OHNE Request-ID (altes Verhalten)
 fx
 ( asA "$(rec x a@example.test sascha "[$(pay $P1 1150)]")" >/dev/null ) &
 ( asA "$(rec x a@example.test sascha "[$(pay $P1 1150)]")" >/dev/null ) &
 wait
-expect_val "parallel: genau eine Zahlung je Posten+Monat (Upsert), kein Fehler" 1 "$(su "SELECT count(*) FROM public.posten_zahlungen")"
-# Bekanntes, dokumentiertes Verhalten: Wiederholung legt weiteren Kontostand an (nicht idempotent).
-expect_val "parallel: zwei Kontostaende (dokumentiertes Verhalten, nicht idempotent)" 2 "$(su "SELECT count(*) FROM public.kontostaende")"
+expect_val "ohne Request-ID parallel: eine Zahlung (Upsert), zwei Kontostaende" "1|2" "$(su "SELECT (SELECT count(*) FROM public.posten_zahlungen)||'|'||(SELECT count(*) FROM public.kontostaende)")"
+
+# Idempotenz mit Request-ID
+RID=cccccccc-0000-0000-0000-000000000001
+recid() { echo "SELECT public.save_account_reconciliation(2500.50, '$TS', 'a@example.test', 'sascha', '$1'::jsonb, '$RID')"; }
+fx
+asA "$(recid "[$(pay $P1 1150)]")" >/dev/null; asA "$(recid "[$(pay $P1 1150)]")" >/dev/null
+expect_val "Request-ID: Wiederholung legt keinen zweiten Kontostand an" "1|1" "$(state)"
+fx
+( asA "$(recid "[$(pay $P1 1150),$(pay $P2 9.99)]")" >/dev/null ) &
+( asA "$(recid "[$(pay $P1 1150),$(pay $P2 9.99)]")" >/dev/null ) &
+wait
+expect_val "Request-ID parallel: genau ein Kontostand, beide Zahlungen" "1|2" "$(state)"
+fx
+asA "$(recid "[$(pay $P1 1150)]")" >/dev/null
+asA "SELECT public.save_account_reconciliation(1, '$TS', 'a@example.test', 'sascha', '[]', 'cccccccc-0000-0000-0000-000000000002')" >/dev/null
+expect_val "verschiedene Request-IDs: getrennte Kontostaende" "2|1" "$(state)"
+fx
+out=$(asA "$(recid "[$(pay $P1 1.00)]")"); 
+expect_err "Request-ID: ungueltige Wiederholung wird weiterhin validiert" "amount changed" "$out"
+expect_val "  ... nichts gespeichert" "0|0" "$(state)"

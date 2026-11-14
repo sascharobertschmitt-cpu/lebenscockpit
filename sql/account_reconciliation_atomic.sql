@@ -1,8 +1,14 @@
 -- Draft only. Do not apply to production without isolated integration tests.
 -- One transaction: either balance AND all payment confirmations are stored, or none.
+-- Idempotenz: optionale Client-Request-ID (vom Client einmal je Abgleich erzeugt, bei Wiederholung gleich).
+-- Gleiche ID => genau ein Kontostand, Wiederholung/Parallelaufruf ist ein No-op. Ohne ID: altes Verhalten.
+ALTER TABLE public.kontostaende ADD COLUMN IF NOT EXISTS request_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS kontostaende_request_id_key
+  ON public.kontostaende(request_id) WHERE request_id IS NOT NULL;
+DROP FUNCTION IF EXISTS public.save_account_reconciliation(numeric,timestamptz,text,text,jsonb);
 CREATE OR REPLACE FUNCTION public.save_account_reconciliation(
   p_betrag numeric, p_erfasst_am timestamptz, p_erfasst_von text,
-  p_konto text, p_zahlungen jsonb DEFAULT '[]'::jsonb
+  p_konto text, p_zahlungen jsonb DEFAULT '[]'::jsonb, p_request_id uuid DEFAULT NULL
 ) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
@@ -13,6 +19,7 @@ DECLARE
   v_paid date;
   v_amount numeric;
   v_timestamp timestamptz;
+  v_rows integer;
 BEGIN
   IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Authentication required'; END IF;
   IF p_erfasst_von IS DISTINCT FROM (auth.jwt()->>'email') THEN
@@ -40,8 +47,11 @@ BEGIN
     IF v_amount IS DISTINCT FROM v_posten.betrag THEN RAISE EXCEPTION 'Payment amount changed; reload'; END IF;
     IF v_timestamp IS DISTINCT FROM p_erfasst_am THEN RAISE EXCEPTION 'Timestamp mismatch'; END IF;
   END LOOP;
-  INSERT INTO public.kontostaende(betrag,erfasst_am,erfasst_von,konto)
-  VALUES (p_betrag,p_erfasst_am,p_erfasst_von,p_konto);
+  INSERT INTO public.kontostaende(betrag,erfasst_am,erfasst_von,konto,request_id)
+  VALUES (p_betrag,p_erfasst_am,p_erfasst_von,p_konto,p_request_id)
+  ON CONFLICT (request_id) WHERE request_id IS NOT NULL DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN RETURN; END IF; -- bereits verbucht (Wiederholung)
   FOR v_payment IN SELECT value FROM jsonb_array_elements(p_zahlungen) LOOP
     INSERT INTO public.posten_zahlungen(posten_id,finanzmonat,betrag,bezahlt_am,erfasst_am)
     VALUES ((v_payment->>'posten_id')::uuid,(v_payment->>'finanzmonat')::date,
@@ -52,5 +62,5 @@ BEGIN
   END LOOP;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.save_account_reconciliation(numeric,timestamptz,text,text,jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.save_account_reconciliation(numeric,timestamptz,text,text,jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.save_account_reconciliation(numeric,timestamptz,text,text,jsonb,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_account_reconciliation(numeric,timestamptz,text,text,jsonb,uuid) TO authenticated;
