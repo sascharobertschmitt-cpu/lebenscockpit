@@ -3,10 +3,10 @@ name: Database integration tests
 on:
   push:
     branches: ['claude/**', 'feature/**', 'fix/**']
-    paths: ['sql/**', 'test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
+    paths: ['test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
   pull_request:
     branches: [main]
-    paths: ['sql/**', 'test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
+    paths: ['test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
   workflow_dispatch:
 permissions:
   contents: read

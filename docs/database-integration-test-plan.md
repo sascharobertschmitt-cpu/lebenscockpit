@@ -6,7 +6,7 @@
 1. Lokale Supabase-Instanz oder gesondertes Supabase-Testprojekt verwenden. **Keine Produktionsdaten und keine produktiven Zugangsdaten kopieren.**
 2. Schema inklusive Constraints, Triggern, `private.ist_mitglied()` und RLS-Policies aus versionierten, geprüften Baseline-Migrationen aufbauen. Bestehende SQL-Entwürfe allein reichen nicht für eine vollständige Testdatenbank.
 3. Drei Test-Identitäten anlegen: zwei Haushaltsmitglieder, eine nicht berechtigte Person. Test-JWTs verwenden, niemals Service-Role als Ersatz für authentifizierte Nutzer.
-4. Erst in der isolierten Datenbank `sql/task_completion_atomic.sql` und `sql/account_reconciliation_atomic.sql` anwenden.
+4. Erst in der isolierten Datenbank `supabase/migrations/20261114200000_task_completion_atomic.sql` und `…200100_account_reconciliation_idempotent.sql` anwenden.
 5. Alle Tests mit unabhängigen Fixtures durchführen und nach jedem Fall Tabellenzustand prüfen; keine produktiven Datensätze verwenden.
 
 ## Aufgaben-RPC: verpflichtende Fälle
@@ -40,7 +40,7 @@
 | Ungültige JSON-Struktur / fehlende Werte | Abgelehnt, keine Teilbuchung |
 
 ## Vor dem Ausführen beheben bzw. festlegen
-- Die bestehenden SQL-Dateien sind **Entwürfe**. Tabellen- und Constraint-Definitionen mit vollständigem Testschema abgleichen.
+- Die SQL-Dateien liegen jetzt als versionierte Migrationen in `supabase/migrations` (Rolloutplan: `docs/migration-rollout-plan.md`). Tabellen- und Constraint-Definitionen mit vollständigem Testschema abgleichen.
 - Bei Aufgaben-Undo auch **manuell geänderte Fälligkeit** des Nachfolgers erkennen. Die aktuelle Schutzprüfung deckt Titel, Zuständigkeit, Wiederholung und Nachkommen ab, aber noch nicht sicher jede Datumsänderung.
 - Die wiederkehrende Aufgabenlogik in SQL gegen `logic.js:nextRecurrence` vergleichen, einschließlich Monatsende und Schaltjahren.
 - Für Finanzabgleich prüfen, ob die Wiederholung desselben Requests idempotent sein soll; derzeit kann ein erneuter Aufruf einen weiteren Kontostand anlegen.

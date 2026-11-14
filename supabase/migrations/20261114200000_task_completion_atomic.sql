@@ -1,4 +1,8 @@
--- Apply only after reviewing against the live schema and RLS policies.
+-- Migration 1/2: set_task_completion (atomares Erledigen/Rueckgaengig inkl. Folgeaufgabe).
+-- Geprueft gegen das Produktivschema (Projekt txxlniprkltweeenmexf, Stand 14.11.2026, nur lesend).
+-- Rein additiv: 2 neue, nullbare Spalten auf aufgaben, 1 partieller Unique-Index, 1 Funktion.
+-- Idempotent (IF NOT EXISTS / CREATE OR REPLACE); keine bestehende Zeile wird veraendert.
+-- Ablauf und Rollback: docs/migration-rollout-plan.md
 ALTER TABLE public.aufgaben
   ADD COLUMN IF NOT EXISTS vorgaenger_id uuid REFERENCES public.aufgaben(id) ON DELETE SET NULL;
 -- Vom System berechnete Faelligkeit des Nachfolgers; Abweichung von faellig = manuell geaendert (blockiert Undo).

@@ -1,8 +1,9 @@
 -- Produktionsnahes, rein SYNTHETISCHES Schema fuer den Backup/Restore-Test.
 -- Spalten, Checks, Unique-/FK-Constraints, Indizes, RLS-Policies und private.ist_mitglied()
 -- sind den Katalog-Metadaten des Produktivprojekts nachgebildet (Stand 14.11.2026, ohne Daten).
--- Der Funktionsrumpf von private.ist_mitglied() ist eine Nachbildung (E-Mail aus auth.jwt()
--- gegen mitglieder.email), nicht der Originaltext.
+-- private.ist_mitglied() entspricht dem Produktivtext (pg_get_functiondef, 14.11.2026):
+-- Vergleich ohne Beachtung der Gross-/Kleinschreibung. bankumsaetze ist nur fuer die Vollstaendigkeit
+-- enthalten; die beiden RPCs beruehren sie nicht.
 -- Voraussetzung: supabase_stub.sql wurde vorher eingespielt.
 -- Nur Schema, keine Daten (Daten-Fixtures liegen im Test selbst).
 \set ON_ERROR_STOP on
@@ -46,17 +47,26 @@ CREATE TABLE public.aufgaben (
   erstellt_am timestamptz NOT NULL DEFAULT now());
 CREATE INDEX aufgaben_erledigt_faellig_idx ON public.aufgaben (erledigt, faellig);
 
+CREATE TABLE public.bankumsaetze (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  konto text NOT NULL CHECK (konto IN ('sascha','luna')),
+  buchungsdatum date NOT NULL, betrag numeric NOT NULL,
+  verwendungszweck text NOT NULL DEFAULT '', gegenpartei text NOT NULL DEFAULT '',
+  import_key text NOT NULL, importiert_am timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT bankumsaetze_konto_import_key_key UNIQUE (konto, import_key));
+CREATE INDEX bankumsaetze_konto_datum_idx ON public.bankumsaetze (konto, buchungsdatum DESC);
+
 CREATE SCHEMA private;
 GRANT USAGE ON SCHEMA private TO authenticated;
 CREATE FUNCTION private.ist_mitglied() RETURNS boolean
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
-  SELECT EXISTS (SELECT 1 FROM public.mitglieder m WHERE m.email = (auth.jwt() ->> 'email'))
+  SELECT EXISTS (SELECT 1 FROM public.mitglieder m WHERE lower(m.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
 $$;
 REVOKE ALL ON FUNCTION private.ist_mitglied() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION private.ist_mitglied() TO authenticated;
 
 DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['mitglieder','einnahmen','posten','posten_zahlungen','kontostaende','aufgaben'] LOOP
+  FOREACH t IN ARRAY ARRAY['mitglieder','einnahmen','posten','posten_zahlungen','kontostaende','aufgaben','bankumsaetze'] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     IF t <> 'mitglieder' THEN
       EXECUTE format('CREATE POLICY "nur mitglieder" ON public.%I FOR ALL TO authenticated '

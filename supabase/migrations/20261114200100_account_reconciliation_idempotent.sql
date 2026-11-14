@@ -1,4 +1,8 @@
--- Draft only. Do not apply to production without isolated integration tests.
+-- Migration 2/2: save_account_reconciliation (atomarer Kontoabgleich, idempotent ueber request_id).
+-- Geprueft gegen das Produktivschema (Projekt txxlniprkltweeenmexf, Stand 14.11.2026, nur lesend).
+-- Rein additiv: 1 neue, nullbare Spalte auf kontostaende, 1 partieller Unique-Index, 1 Funktion.
+-- Auf Produktion existiert noch keine Vorgaengerfunktion; das DROP raeumt nur eine alte 5-Argument-Variante weg.
+-- Ablauf und Rollback: docs/migration-rollout-plan.md
 -- One transaction: either balance AND all payment confirmations are stored, or none.
 -- Idempotenz: optionale Client-Request-ID (vom Client einmal je Abgleich erzeugt, bei Wiederholung gleich).
 -- Gleiche ID => genau ein Kontostand, Wiederholung/Parallelaufruf ist ein No-op. Ohne ID: altes Verhalten.

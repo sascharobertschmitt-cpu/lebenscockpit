@@ -21,5 +21,5 @@ jobs:
         run: node test/smoke.test.js
       - name: Calendar draft tests
         run: node test/calendar-draft.test.js
-      - name: SQL draft contract checks
+      - name: SQL contract checks
         run: node test/sql-contract.test.js

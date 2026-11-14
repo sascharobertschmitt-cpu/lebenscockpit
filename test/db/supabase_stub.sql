@@ -25,3 +25,8 @@ CREATE SCHEMA IF NOT EXISTS public;
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON TABLES TO anon, authenticated, service_role;
+-- Wie in Produktion (pg_default_acl, geprueft 14.11.2026): neue Funktionen in public sind per Default
+-- fuer anon, authenticated und service_role ausfuehrbar. Ohne diese Zeile waere der anon-Test wertlos,
+-- weil anon die Funktion dann nie bekaeme und ein fehlendes REVOKE unentdeckt bliebe.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;

@@ -15,7 +15,7 @@ Stand: 2026-11-14. Ziel: **ein gemeinsamer Google Kalender „Lebenscockpit“**
 
 ## Bestehende technische Ausgangslage
 - Statische Browser-App (index.html, app.js, logic.js, style.css), Supabase Auth und Tabellen.
-- Der Branch enthält die **noch nicht ausgerollte** SQL-Datei `sql/task_completion_atomic.sql` sowie einen Aufruf von `set_task_completion`. **Branch nicht deployen**, bevor RPC, RLS und Tests geprüft sind.
+- Der Branch enthält die **noch nicht ausgerollte** SQL-Datei `supabase/migrations/20261114200000_task_completion_atomic.sql` sowie einen Aufruf von `set_task_completion`. **Branch nicht deployen**, bevor RPC, RLS und Tests geprüft sind.
 - Vor Kalenderarbeit die Aufgaben-RPC-Migration und den noch offenen transaktionalen Finanzabgleich fertigstellen. Migrationsdateien sind derzeit Entwürfe, nicht angewandt.
 
 ## Architektur

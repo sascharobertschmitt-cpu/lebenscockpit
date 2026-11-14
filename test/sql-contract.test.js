@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
-const task = fs.readFileSync(path.join(root, 'sql/task_completion_atomic.sql'), 'utf8');
-const finance = fs.readFileSync(path.join(root, 'sql/account_reconciliation_atomic.sql'), 'utf8');
+const task = fs.readFileSync(path.join(root, 'supabase/migrations/20261114200000_task_completion_atomic.sql'), 'utf8');
+const finance = fs.readFileSync(path.join(root, 'supabase/migrations/20261114200100_account_reconciliation_idempotent.sql'), 'utf8');
 for (const [name, sql] of [['task', task], ['finance', finance]]) {
   assert.match(sql, /SECURITY INVOKER/i, name + ' must respect caller permissions');
   assert.match(sql, /SET search_path = ''/i, name + ' must fix search_path');
@@ -20,7 +20,7 @@ for (const recurrence of ['taeglich', 'woechentlich', 'monatlich', 'jaehrlich'])
 assert.match(finance, /jsonb_typeof\(p_zahlungen\)/i);
 assert.match(finance, /ON CONFLICT \(posten_id,finanzmonat\)/i);
 assert.match(finance, /Payment amount changed/i);
-console.log('SQL draft contract checks passed (not a database test)');
 assert.match(finance, /auth\.uid\(\) IS NULL/i);
 assert.match(finance, /auth\.jwt\(\)->>'email'/i);
 assert.match(finance, /Incomplete payment/i);
+console.log('SQL contract checks passed (static, not a database test)');
