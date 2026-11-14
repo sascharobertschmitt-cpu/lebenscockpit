@@ -135,3 +135,14 @@ nav button svg{flex:none}
 .restbudget-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 0;border-bottom:1px solid rgba(180,185,210,.13);font-size:13px}
 .restbudget-line span{color:var(--muted);min-width:0}
 .restbudget-line b{text-align:right;overflow-wrap:anywhere;flex-shrink:0;max-width:53%}
+
+/* Compact, accessible dashboard accordions */
+.dash-fold{margin:12px 0;border:1px solid rgba(170,180,215,.18);border-radius:16px;background:var(--card,rgba(30,34,48,.85));overflow:hidden}
+.dash-fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;font-weight:700;font-size:14px;min-height:50px}
+.dash-fold>summary::-webkit-details-marker{display:none}
+.dash-fold>summary:after{content:'⌄';font-size:20px;color:var(--muted);transition:transform .18s;flex-shrink:0}
+.dash-fold[open]>summary:after{transform:rotate(180deg)}
+.dash-fold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.dash-fold-body{padding:0 12px 12px}
+.dash-fold-body>.hero,.dash-fold-body>.card,.dash-fold-body>.grid2{margin-top:0}
+.dash-fold-body>.restbudget{margin-top:0}
