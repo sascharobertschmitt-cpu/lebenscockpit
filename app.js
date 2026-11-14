@@ -68,6 +68,36 @@
     S.busy = false;
   }
 
+  // ---------- Datenbank-Sicherheitswarnung ----------
+  async function checkTableSecurity() {
+    if (!S.user) return;
+    var result = await sb.rpc('table_security_audit');
+    if (result.error) {
+      // Never interpret an unavailable audit as a clean bill of health.
+      showSecurityWarning('Die Sicherheitsprüfung konnte nicht ausgeführt werden. Bitte die Datenbank-Konfiguration prüfen.');
+      return;
+    }
+    if (result.data && result.data.length) {
+      showSecurityWarning('Ungeprüfte oder unsichere Datenbanktabellen: ' +
+        result.data.map(function (x) { return x.table_name + ' – ' + x.issue; }).join('; '));
+    }
+  }
+  function showSecurityWarning(message) {
+    if (!S.user || document.getElementById('security-warning')) return;
+    var overlay = document.createElement('div');
+    overlay.id = 'security-warning';
+    overlay.setAttribute('role', 'alertdialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'security-warning-title');
+    overlay.innerHTML = '<div class="security-warning-box"><h1 id="security-warning-title">⚠ Sicherheitsprüfung erforderlich</h1>' +
+      '<p id="security-warning-message"></p><p>Bitte keine neuen sensiblen Daten erfassen, bis die Datenbank geprüft wurde.</p>' +
+      '<button class="primary" type="button" id="security-warning-close">Verstanden</button></div>';
+    document.body.appendChild(overlay);
+    document.getElementById('security-warning-message').textContent = message;
+    document.getElementById('security-warning-close').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('security-warning-close').focus();
+  }
+
   // ---------- Login ----------
   function renderLogin(msg) {
     $app.innerHTML =
@@ -87,6 +117,7 @@
     S.user = r.data.user;
     $app.innerHTML = '<p class="boot">Lädt…</p>';
     await reload();
+    await checkTableSecurity();
   }
   async function logout() {
     try { await sb.auth.signOut(); } catch (e) { /* egal */ }
