@@ -40,7 +40,8 @@
       a.src = 'logic.js';
       a.onload = function () {
         var b = document.createElement('script');
-        b.src = 'app.js';
+        b.src = 'bank-csv.js';
+        b.onload = function () { var c = document.createElement('script'); c.src = 'app.js'; document.body.appendChild(c); };
         document.body.appendChild(b);
       };
       document.body.appendChild(a);
