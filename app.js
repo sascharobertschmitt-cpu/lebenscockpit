@@ -140,6 +140,28 @@
       '<div class="main" data-action="aufgabe-edit" data-id="' + esc(a.id) + '"><div class="t">' + esc(a.titel) + '</div><div class="s">' + bits.join(' · ') + '</div></div></div>';
   }
 
+  function restbudget(lage) {
+    if (!lage.stand || !lage.next) return '';
+    var konto = Number(lage.stand.betrag);
+    var luna = lage.luna ? Number(lage.luna.betrag) : null;
+    var offen = lage.offen + lage.nachStand;
+    var rest = lage.verfuegbar;
+    var combined = lage.gesamt;
+    var h = '<section class="card restbudget" aria-label="Verbleibendes Geld bis zum nächsten Gehalt">' +
+      '<h2>Was bleibt bis zum Gehalt?</h2>' +
+      '<p class="note">Rechnerischer Spielraum bis ' + esc(fmtD(lage.next.date)) + ' – inklusive Dispo, kein reines Guthaben.</p>' +
+      '<div class="restbudget-total"><span>Gemeinsam verbleibend</span><strong>' +
+      (combined == null ? 'Lunas Stand fehlt' : eur(combined)) + '</strong></div>' +
+      '<div class="restbudget-line"><span>Saschas Kontostand</span><b>' + eur(konto) + '</b></div>' +
+      '<div class="restbudget-line"><span>Verfügbarer Disporahmen insgesamt</span><b>' + eur(DISPO) + '</b></div>' +
+      '<div class="restbudget-line"><span>Noch abzuziehende Zahlungen</span><b>− ' + eur(offen) + '</b></div>' +
+      '<div class="restbudget-line"><span>Spielraum Sascha</span><b>' + eur(rest) + '</b></div>' +
+      '<div class="restbudget-line"><span>Lunas Kontostand</span><b>' + (luna == null ? 'Nicht erfasst' : eur(luna)) + '</b></div>' +
+      '<p class="note">Ohne zusätzliche Einkäufe und nicht erfasste Kosten. Bargeldzahlungen sind in dieser Kontorechnung nicht berücksichtigt.</p>' +
+      '</section>';
+    return h;
+  }
+
   function viewHeute() {
     var t = todayD();
     var lage = L.calcLage(S, t, DISPO);
@@ -184,6 +206,7 @@
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
       if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
+    h += restbudget(lage);
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
     var open = S.aufgaben.filter(function (a) { return !a.erledigt && a.faellig && L.parseISO(a.faellig) <= t; });
@@ -221,6 +244,7 @@
     var cs = L.periodStart(t);
     var m = L.monatSummary(S, cs, t);
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
+    h += restbudget(L.calcLage(S, t, DISPO));
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
     h += '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
