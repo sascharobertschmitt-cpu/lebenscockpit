@@ -20,6 +20,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Check browser JavaScript syntax
+        run: node --check app.js
+      - name: Run existing app tests
+        run: |
+          node test/logic.test.js
+          node test/smoke.test.js
       - name: Test unsafe migration detection
         run: python -m unittest discover -s scripts -p 'test_table_security.py' -v
       - name: Check table security controls
