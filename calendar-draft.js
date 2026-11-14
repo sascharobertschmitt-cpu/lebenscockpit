@@ -15,7 +15,7 @@
       return { summary: summary, start: { date: task.faellig },
         end: { date: nextDay(task.faellig) }, reminders: { useDefault: true } };
     }
-    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(task.uhrzeit)) throw new Error('Invalid time');
+    if (!/^[0-2][0-9]:[0-5][0-9]$/.test(task.uhrzeit) || Number(task.uhrzeit.slice(0, 2)) > 23) throw new Error('Invalid time');
     // Google accepts local dateTime with an IANA timeZone; 30 minutes duration
     // is calculated by the backend with DST-aware timezone handling, not here.
     return { summary: summary, start: { dateTime: task.faellig + 'T' + task.uhrzeit + ':00', timeZone: 'Europe/Berlin' },
