@@ -25,3 +25,10 @@ Der Workflow `.github/workflows/encrypted-drive-backup.yml` sichert per `pg_dump
 
 ## Release-Entscheidung
 Solange der Bucket nicht mit echten Auth-/Storage-API-Aufrufen getestet und ein akzeptierter Backup-/Restore-Weg geklärt ist, ist der Foto-Eingang **nicht produktionsfreigegeben**. Die datenbankseitigen Tests allein sind dafür kein Ersatz.
+
+## Umsetzung Storage-Export (Stand Branch)
+- `scripts/belege-backup-lib.mjs`: gemeinsame Logik für Export und Prüfung (ein einziger Namens-Regex `<uuid>.jpg`, damit Exporter und Verifier nicht auseinanderlaufen). Export bricht ab bei fremden Objektnamen/Ordnern, Größenabweichung zur Storage-Liste, HTTP-Fehlern und Duplikaten.
+- `scripts/export-belege.mjs` (CLI, nur HTTPS) und `scripts/verify-belege-export.mjs` (CLI, prüft Vollständigkeit, Größe und SHA-256).
+- Workflow `belege-backup.yml` (nur manuell): Selbsttest → Export → Verify → `age`-Verschlüsselung → Upload nur des verschlüsselten Archivs. Klartext wird per `trap` auch im Fehlerfall gelöscht; Objektanzahl und Archiv-SHA-256 stehen in der Job-Zusammenfassung.
+- Getestet (`node --test test/belege-*.test.mjs`): Happy Path gegen Fake-Storage, Paginierung > 100, leerer Bucket, Manipulation, fehlende/zusätzliche Dateien, unsichere Namen. Lokal zusätzlich Roundtrip mit synthetischem `age`-Schlüssel inkl. Entschlüsselung und erneuter Prüfung.
+- **Offen:** Lauf gegen echtes Supabase (benötigt Secret `BACKUP_STORAGE_SERVICE_ROLE_KEY` und Freigabe) und Restore-Abgleich mit `beleg_pfad` (Punkt 4 oben).

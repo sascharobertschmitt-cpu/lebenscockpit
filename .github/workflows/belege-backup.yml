@@ -3,37 +3,53 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: encrypted-receipt-backup
+  cancel-in-progress: false
 jobs:
   receipt-backup:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SUPABASE_URL: https://txxlniprkltweeenmexf.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.BACKUP_STORAGE_SERVICE_ROLE_KEY }}
+      # Public key only. The private key is stored offline by the owner.
       AGE_RECIPIENT: age1p255cwy2padre3jyg0umynlkkcdpgl2jx4h7hnsta050zuz7zpgsxhw4ah
     steps:
       - uses: actions/checkout@v4
-      - name: Require configured secret
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exporter and verifier self-test (no network, no secret)
+        run: node --test test/belege-*.test.mjs
+      - name: Install age
         run: |
           set -euo pipefail
-          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::BACKUP_STORAGE_SERVICE_ROLE_KEY missing"; exit 1; }
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
       - name: Export, verify and encrypt
         shell: bash
+        env:
+          # Secret is only exposed to this step.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.BACKUP_STORAGE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
           umask 077
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq age
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::BACKUP_STORAGE_SERVICE_ROLE_KEY missing"; exit 1; }
           export BACKUP_OUTPUT_DIR="$RUNNER_TEMP/receipt-export"
+          # Never leave plaintext receipts behind, also not when a step below fails.
+          trap 'rm -rf "$BACKUP_OUTPUT_DIR"' EXIT
           node scripts/export-belege.mjs
           node scripts/verify-belege-export.mjs "$BACKUP_OUTPUT_DIR"
           tar -C "$BACKUP_OUTPUT_DIR" -cf - manifest.json files | age -r "$AGE_RECIPIENT" -o "$RUNNER_TEMP/belege.tar.age"
           test -s "$RUNNER_TEMP/belege.tar.age"
-          rm -rf "$BACKUP_OUTPUT_DIR"
+          head -c 64 "$RUNNER_TEMP/belege.tar.age" | grep -q '^age-encryption.org/v1' || { echo "::error::Archive is not age-encrypted"; exit 1; }
+          count=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).files.length)' "$BACKUP_OUTPUT_DIR/manifest.json")
+          sum=$(sha256sum "$RUNNER_TEMP/belege.tar.age" | cut -d' ' -f1)
+          echo "Receipt backup: $count objects, archive sha256 $sum" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload encrypted archive only
         uses: actions/upload-artifact@v4
         with:
-          name: belege-encrypted
+          name: belege-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/belege.tar.age
           retention-days: 90
           if-no-files-found: error
