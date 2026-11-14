@@ -120,5 +120,19 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
 
   const all = app() + elements.modal.innerHTML;
   assert.ok(!/NaN|undefined|\[object/.test(all), 'keine NaN oder undefined auf dem Bildschirm');
+  // Historische Zahlung schützt einmalige Posten vor dem Löschbutton.
+  db.posten.push({
+    id: 'history-once', name: 'Historische Einmalzahlung', betrag: 19,
+    rhythmus: 'einmalig', zahlung: 'konto', faellig_am: '2026-11-10',
+    status: 'sicher', kategorie: 'sonstiges'
+  });
+  db.posten_zahlungen.push({
+    id: 'history-payment', posten_id: 'history-once',
+    finanzmonat: '2026-10-25', betrag: 19, erfasst_am: '2026-11-13T10:00:00Z'
+  });
+  click({ action: 'posten-edit', id: 'history-once' });
+  assert.ok(/Zahlungshistorie/.test(elements.modal.innerHTML), 'Historie wird erklärt');
+  assert.ok(!/data-action="posten-delete"/.test(elements.modal.innerHTML), 'Kein Löschbutton bei bestätigter Zahlung');
+
   console.log('Smoke-Test bestanden');
 })().catch((e) => { console.error(e); process.exit(1); });
