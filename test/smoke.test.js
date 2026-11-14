@@ -35,7 +35,7 @@ const db = {
 const calls = [];
 function from(table) {
   const q = { _t: table, _op: 'select' };
-  const chain = ['select', 'order', 'limit', 'eq'];
+  const chain = ['select', 'order', 'limit', 'eq', 'or'];
   chain.forEach((m) => { q[m] = () => q; });
   ['insert', 'update', 'delete', 'upsert'].forEach((m) => { q[m] = (arg) => { q._op = m; calls.push([table, m, arg]); return q; }; });
   q.then = (res) => res({ data: q._op === 'select' ? db[table] : null, error: null });

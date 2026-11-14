@@ -61,11 +61,12 @@
       sb.from('einnahmen').select('*'),
       sb.from('posten').select('*'),
       sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }).limit(30),
-      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false })
+      sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
+      sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
+      sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1)
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data; S.aufgaben = r[4].data;
+    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data;
     S.loaded = true;
   }
   async function reload() {
@@ -255,28 +256,28 @@
     var cs = L.periodStart(t);
     var m = L.monatSummary(S, cs, t);
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
-    h += restbudget(L.calcLage(S, t, DISPO));
+    h += foldStart('money-budget', 'Restbudget bis zum Gehalt', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
-    h += '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
+    h += foldStart('money-month', 'Monatsübersicht', true) + '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
       '<tr><td colspan="2" class="s" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">' + einnTxt + '</td></tr>' +
       '<tr><td>Feste Zahlungen</td><td>' + eur(m.fixkosten) + '</td></tr>' +
       (m.bar ? '<tr><td colspan="2" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">davon bar reserviert ' + eur(m.bar) + '</td></tr>' : '') +
-      '<tr class="now"><td>Bleibt für Alltag, Klarna, Kreditkarte, Dispozinsen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div>';
+      '<tr class="now"><td>Rest nach erfassten Zahlungen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div></div></details>';
 
     h += '<button data-action="posten-neu">Zahlung hinzufügen</button><p class="note">Klarna und Kreditkarte trägst du als einzelne Zahlung mit Datum ein.</p>';
 
     var offen = m.items.filter(function (i) { return !i.paid; });
     var bezahlt = m.items.filter(function (i) { return i.paid; });
-    h += '<h2>Offen (' + offen.length + ')</h2><div class="card">' + (offen.length ? offen.map(itemRow).join('') : '<div class="empty">Alles bezahlt.</div>') + '</div>';
-    h += '<h2>Bezahlt (' + bezahlt.length + ')</h2><div class="card">' + (bezahlt.length ? bezahlt.map(itemRow).join('') : '<div class="empty">Noch nichts abgehakt.</div>') + '</div>';
+    h += foldStart('money-open', 'Offen (' + offen.length + ')', true) + '<div class="card">' + (offen.length ? offen.map(itemRow).join('') : '<div class="empty">Alles bezahlt.</div>') + '</div></div></details>';
+    h += foldStart('money-paid', 'Bezahlt (' + bezahlt.length + ')', false) + '<div class="card">' + (bezahlt.length ? bezahlt.map(itemRow).join('') : '<div class="empty">Noch nichts abgehakt.</div>') + '</div></div></details>';
 
     var v = L.vorschau(S, t, 6);
-    h += '<h2>Vorschau der nächsten Monate</h2><div class="card"><table><tr><th>Bis</th><th>Einnahmen</th><th>Feste Zahlungen</th><th>Rest</th></tr>' +
+    h += foldStart('money-forecast', 'Vorschau der nächsten Monate') + '<div class="card"><table><tr><th>Bis</th><th>Einnahmen</th><th>Feste Zahlungen</th><th>Rest</th></tr>' +
       v.map(function (x, i) {
         var step = i > 0 && Math.abs(x.fixkosten - v[i - 1].fixkosten) > 0.5;
         return '<tr class="' + (i === 0 ? 'now ' : '') + (step ? 'step' : '') + '"><td>' + esc(fmtD(x.end)) + '</td><td>' + eur0(x.einnahmen) + '</td><td>' + eur0(x.fixkosten) + '</td><td>' + eur0(x.rest) + '</td></tr>';
-      }).join('') + '</table><p class="note">Rot markiert: Hier ändern sich die festen Zahlungen, zum Beispiel durch eine neue Rate.</p></div>';
+      }).join('') + '</table><p class="note">Rot markiert: Hier ändern sich die festen Zahlungen, zum Beispiel durch eine neue Rate.</p></div></div></details>';
     return h;
   }
 
