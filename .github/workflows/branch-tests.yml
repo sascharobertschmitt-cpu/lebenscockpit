@@ -26,4 +26,4 @@ jobs:
       - name: SQL contract checks
         run: node test/sql-contract.test.js
       - name: Receipt export security tests
-        run: node --test test/belege-export.test.mjs
+        run: node --test test/belege-*.test.mjs
