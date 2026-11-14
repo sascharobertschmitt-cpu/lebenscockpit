@@ -33,11 +33,11 @@ jobs:
               exit 1
             fi
           done
-      - name: Install PostgreSQL client and backup tools
+      - name: Install backup tools
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client age rclone
+          sudo apt-get install -y -qq age rclone
       - name: Export, encrypt and upload
         shell: bash
         run: |
@@ -50,7 +50,11 @@ jobs:
           stamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           filename="lebenscockpit-$stamp.dump.age"
           # Database connection string must point to the direct or session pooler endpoint.
-          pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file="$tmpdir/backup.dump"
+          docker run --rm --network host \
+            -e DATABASE_URL \
+            -v "$tmpdir:/backup" \
+            postgres:17 \
+            pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/backup.dump
           test -s "$tmpdir/backup.dump"
           age -r "$AGE_RECIPIENT" -o "$tmpdir/$filename" "$tmpdir/backup.dump"
           test -s "$tmpdir/$filename"
