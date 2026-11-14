@@ -51,7 +51,7 @@ DO $$
 DECLARE r text; t record; p text; privs text[];
 BEGIN
   privs := ARRAY['TRUNCATE','REFERENCES','TRIGGER'];
-  IF current_setting('server_version_num')::int >= 170000 THEN privs := privs || 'MAINTAIN'; END IF;
+  IF current_setting('server_version_num')::int >= 170000 THEN privs := privs || ARRAY['MAINTAIN']; END IF;
   FOR t IN SELECT c.oid, c.relname FROM pg_class c
            WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') LOOP
     FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
