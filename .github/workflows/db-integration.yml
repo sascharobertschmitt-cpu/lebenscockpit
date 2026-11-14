@@ -1,0 +1,37 @@
+name: Database integration tests
+# Laeuft gegen einen Wegwerf-PostgreSQL-Container im Runner. Kein Supabase, keine Secrets, nur synthetische Daten.
+on:
+  push:
+    branches: ['claude/**', 'feature/**', 'fix/**']
+    paths: ['sql/**', 'test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
+  pull_request:
+    branches: [main]
+    paths: ['sql/**', 'test/db/**', 'supabase/**', '.github/workflows/db-integration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static SQL contract checks
+        run: node test/sql-contract.test.js
+      - name: PostgreSQL integration tests
+        run: ./test/db/run.sh

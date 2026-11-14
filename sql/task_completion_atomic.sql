@@ -1,6 +1,8 @@
 -- Apply only after reviewing against the live schema and RLS policies.
 ALTER TABLE public.aufgaben
   ADD COLUMN IF NOT EXISTS vorgaenger_id uuid REFERENCES public.aufgaben(id) ON DELETE SET NULL;
+-- Vom System berechnete Faelligkeit des Nachfolgers; Abweichung von faellig = manuell geaendert (blockiert Undo).
+ALTER TABLE public.aufgaben ADD COLUMN IF NOT EXISTS auto_faellig date;
 CREATE UNIQUE INDEX IF NOT EXISTS aufgaben_one_successor
   ON public.aufgaben(vorgaenger_id) WHERE vorgaenger_id IS NOT NULL;
 
@@ -12,6 +14,7 @@ DECLARE
   v_child public.aufgaben%ROWTYPE;
   v_next date;
   v_base date;
+  v_today date := (now() AT TIME ZONE 'Europe/Berlin')::date; -- wie die App (lokales Datum), nicht UTC
 BEGIN
   SELECT * INTO v_task FROM public.aufgaben WHERE id = p_task_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Task not found or not accessible'; END IF;
@@ -21,7 +24,7 @@ BEGIN
     SELECT * INTO v_child FROM public.aufgaben WHERE vorgaenger_id = p_task_id FOR UPDATE;
     IF p_done THEN
       IF NOT FOUND THEN
-        v_base := GREATEST(COALESCE(v_task.faellig, CURRENT_DATE), CURRENT_DATE);
+        v_base := GREATEST(COALESCE(v_task.faellig, v_today), v_today);
         CASE v_task.wiederholung
           WHEN 'taeglich' THEN v_next := v_base + 1;
           WHEN 'woechentlich' THEN v_next := v_base + 7;
@@ -36,8 +39,8 @@ BEGIN
                 EXTRACT(day FROM (date_trunc('month', v_base + interval '1 year') + interval '1 month - 1 day')::date)::int));
           ELSE RAISE EXCEPTION 'Unknown recurrence';
         END CASE;
-        INSERT INTO public.aufgaben(titel,zustaendig,faellig,wiederholung,vorgaenger_id)
-        VALUES(v_task.titel,v_task.zustaendig,v_next,v_task.wiederholung,p_task_id);
+        INSERT INTO public.aufgaben(titel,zustaendig,faellig,auto_faellig,wiederholung,vorgaenger_id)
+        VALUES(v_task.titel,v_task.zustaendig,v_next,v_next,v_task.wiederholung,p_task_id);
       END IF;
     ELSE
       IF FOUND THEN
@@ -46,6 +49,7 @@ BEGIN
         IF v_child.titel IS DISTINCT FROM v_task.titel
           OR v_child.zustaendig IS DISTINCT FROM v_task.zustaendig
           OR v_child.wiederholung IS DISTINCT FROM v_task.wiederholung
+          OR v_child.faellig IS DISTINCT FROM v_child.auto_faellig
           OR EXISTS (SELECT 1 FROM public.aufgaben WHERE vorgaenger_id = v_child.id)
         THEN
           RAISE EXCEPTION 'Successor was changed or has descendants; undo is blocked';

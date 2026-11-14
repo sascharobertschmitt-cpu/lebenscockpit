@@ -53,3 +53,16 @@
 - GitHub Actions grün.
 - Review der Auth-/RLS-/Transaktionslogik.
 - Erst danach Entscheidung über produktive Migration und Merge nach `main`.
+
+## Ausfuehrungsstand (isolierte PostgreSQL-16-Instanz)
+Automatisiert in `test/db/run.sh` (Schema: `test/db/schema_baseline.sql` + `supabase_stub.sql`, nur synthetische Daten) und per GitHub Actions `db-integration.yml` (Wegwerf-Container, keine Secrets). Alle Faelle der Tabellen oben sind abgedeckt, inkl. paralleler Ausfuehrung und Rollback-Pruefung; RLS/Rechte laufen mit `SET ROLE authenticated/anon` und Test-JWT-Claims.
+
+**Gefunden und behoben**
+- Aufgaben-Undo erkannte eine manuell geaenderte Faelligkeit des Nachfolgers nicht (Nachfolger wurde geloescht). Neu: Spalte `auto_faellig`; Abweichung von `faellig` blockiert Undo.
+- SQL nutzte `CURRENT_DATE` (UTC); die App rechnet mit lokalem Datum. Neu: Datum in `Europe/Berlin`.
+
+**Offen / bewusst nicht geaendert**
+- Finanzabgleich ist nicht idempotent: ein wiederholter/paralleler Aufruf legt einen weiteren Kontostand an (Zahlungen sind per Upsert dedupliziert). Test dokumentiert das Verhalten; Entscheidung ueber Idempotenzschluessel steht aus.
+- Das Testschema ist ein Nachbau (inkl. nachgebildetem `private.ist_mitglied()`); vor Produktivfreigabe gegen die echten Migrationen abgleichen. `supabase/migrations` (RESTRICT-Fix fuer `posten_zahlungen`) liegt auf einem anderen Branch und ist hier nicht getestet.
+- `auto_faellig` ist eine neue Spalte: Migration vor Produktivnutzung reviewen.
+- Echte Supabase-Auth/JWT-Verifikation ist nicht Teil des Tests (Claims werden simuliert).
