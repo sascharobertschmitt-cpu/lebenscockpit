@@ -519,6 +519,7 @@
       '<label for="wa-b">Budget</label><select id="wa-b">' + opts + '</select>' +
       '<label for="wa-s">Betrag in Euro</label><input id="wa-s" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 23,45" required>' +
       '<label for="wa-d">Datum</label><input id="wa-d" type="date" value="' + L.iso(todayD()) + '" required>' +
+      '<label for="wa-p">Bezahlt von</label><select id="wa-p"><option value="sascha">Sascha (Konto/Karte)</option><option value="luna">Luna (Konto/Karte)</option><option value="bar">bar</option></select>' +
       '<label for="wa-n">Notiz (optional)</label><input id="wa-n" placeholder="zum Beispiel Rewe">' +
       '<div class="err" id="wa-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
     setTimeout(function () { var el = document.getElementById('wa-s'); if (el) el.focus(); }, 50);
@@ -528,7 +529,7 @@
     var b = L.parseBetrag(form.querySelector('#wa-s').value);
     var d = form.querySelector('#wa-d').value;
     if (!isFinite(b) || b <= 0 || !d) { err.textContent = 'Bitte gib einen Betrag größer als null und ein Datum ein.'; return; }
-    var r = await sb.from('wochenausgaben').insert({ budget_id: form.querySelector('#wa-b').value, betrag: b, datum: d, notiz: form.querySelector('#wa-n').value.trim() || null, erfasst_von: S.user.email });
+    var r = await sb.from('wochenausgaben').insert({ budget_id: form.querySelector('#wa-b').value, betrag: b, datum: d, notiz: form.querySelector('#wa-n').value.trim() || null, bezahlt_von: form.querySelector('#wa-p').value, erfasst_von: S.user.email });
     if (r.error) throw r.error;
     closeModal(); await loadAll(); render(); toast('Ausgabe erfasst');
   }
@@ -538,7 +539,7 @@
     var x = w.list.find(function (y) { return y.b.id === id; });
     if (!x) return;
     var rows = x.ausgaben.map(function (a) {
-      return '<div class="row"><div class="main"><div class="t">' + esc(a.notiz || 'Ausgabe') + '</div><div class="s">' + esc(fmtD(L.parseISO(a.datum))) + '</div></div><div class="amt">' + eur(Number(a.betrag)) + '</div>' +
+      return '<div class="row"><div class="main"><div class="t">' + esc(a.notiz || 'Ausgabe') + '</div><div class="s">' + esc(fmtD(L.parseISO(a.datum))) + ' · ' + ({ luna: 'Luna', bar: 'bar' }[a.bezahlt_von] || 'Sascha') + '</div></div><div class="amt">' + eur(Number(a.betrag)) + '</div>' +
         '<button type="button" class="mini-del" data-action="wausgabe-delete" data-id="' + esc(a.id) + '" aria-label="Ausgabe löschen">×</button></div>';
     }).join('');
     openModal('<h1>' + esc(x.b.name) + '</h1>' +
