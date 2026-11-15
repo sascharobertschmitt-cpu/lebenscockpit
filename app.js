@@ -212,6 +212,7 @@
     }
 
     h += '</div></details>';
+    h += viewWochenbudgets();
     h += foldStart('today-balances', 'Kontostände und Hinweise');
     h += '<div class="grid2">' + balanceCard('Saschas Konto', lage.stand) + balanceCard('Lunas Konto', lage.luna) + '</div>';
     if (lage.stand) {
