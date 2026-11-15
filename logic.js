@@ -175,7 +175,7 @@
     const booked = rows.filter(function (x) { return x.buchungsstatus !== 'vorgemerkt'; });
     const standTs = stand ? new Date(stand.erfasst_am).getTime() : null;
     const used = new Set();
-    const res = { liste: [], summe: 0, zusaetzlich: 0, imPosten: 0, abgedeckt: 0, schonGebucht: 0, spaeterGebucht: 0 };
+    const res = { liste: [], summe: 0, zusaetzlich: 0, imPosten: 0, abgedeckt: 0, schonGebucht: 0, spaeterGebucht: 0, postenPlan: 0, abzug: 0 };
     const sameDeal = function (b, x, tok) {
       return gleichBetrag(b.betrag, x.betrag) && /^\d{4}-\d{2}-\d{2}/.test(String(b.buchungsdatum)) && /^\d{4}-\d{2}-\d{2}/.test(String(x.buchungsdatum)) &&
         Math.abs(daysBetween(parseISO(x.buchungsdatum), parseISO(b.buchungsdatum))) <= 7 && shareToken(tok, rowTokens(b));
@@ -195,7 +195,7 @@
       if (m.open) {
         used.add(m.open); entry.art = 'posten'; entry.item = m.open;
         entry.delta = round2(betrag - m.open.betrag); // Bankbetrag ersetzt den geplanten Betrag
-        res.imPosten += betrag; res.zusaetzlich += entry.delta;
+        res.imPosten += betrag; res.zusaetzlich += entry.delta; res.postenPlan += m.open.betrag;
       } else if (m.paid) {
         used.add(m.paid); entry.art = 'abgehakt'; entry.item = m.paid; res.abgedeckt += betrag;
       } else {
@@ -227,7 +227,10 @@
         verbuchen({ row: b, betrag: betrag, art: 'spaeter-gebucht', item: null }, betrag, tok);
       });
     }
-    ['summe', 'zusaetzlich', 'imPosten', 'abgedeckt', 'schonGebucht', 'spaeterGebucht'].forEach(function (k) { res[k] = round2(res[k]); });
+    // Anzeige: Der Kontostand wird um alle noch nicht abgebuchten Umsätze gekürzt, die zugehörigen
+    // offenen Posten verschwinden dafür aus "offen" (gleiche Summe, nur klar getrennt).
+    res.abzug = res.zusaetzlich + res.postenPlan;
+    ['summe', 'abzug', 'postenPlan', 'zusaetzlich', 'imPosten', 'abgedeckt', 'schonGebucht', 'spaeterGebucht'].forEach(function (k) { res[k] = round2(res[k]); });
     return res;
   }
 
@@ -242,7 +245,7 @@
     const luna = alle.find((x) => x.konto === 'luna') || null;
     const einnahmen = (state.einnahmen || []).filter((e) => incomeValid(e, end));
     const next = einnahmen.length ? { date: end, e: einnahmen.find((e) => iso(incomeDate(e, end.getFullYear(), end.getMonth())) === iso(end)) || null } : null;
-    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, vorgemerkt: null, vorgemerktLuna: null, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
+    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, kontoNachVormerkung: null, offenAnzeige: 0, vorgemerkt: null, vorgemerktLuna: null, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
     if (!next) return res;
     res.days = Math.max(1, daysBetween(today, end));
 
@@ -269,6 +272,7 @@
     // Vormerkungen: nur Abzug im Rechenmodell, keine Zahlung wird abgehakt.
     res.vorgemerkt = vorgemerkt(state, today, alleItems, stand, 'sascha');
     res.vorgemerktLuna = vorgemerkt(state, today, [], luna, 'luna');
+    res.offenAnzeige = round2(res.offen - res.vorgemerkt.postenPlan);
     res.vorgemerkt.liste.forEach(function (e) { if (e.art === 'posten') e.item.vorgemerkt = e.row; });
 
     if (stand) {
@@ -280,6 +284,7 @@
         }
       }
       res.nachStand = round2(res.nachStand);
+      res.kontoNachVormerkung = round2(num(stand.betrag) - res.vorgemerkt.abzug);
       res.spielraum = round2(num(stand.betrag) + dispo);
       res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand - res.vorgemerkt.zusaetzlich);
       if (luna) res.gesamt = round2(res.verfuegbar + num(luna.betrag) - res.vorgemerktLuna.summe);
