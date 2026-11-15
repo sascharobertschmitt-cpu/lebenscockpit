@@ -11,7 +11,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], bankumsaetze: [], loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], bankumsaetze: [], wbudgets: [], wausgaben: [], loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
@@ -64,10 +64,12 @@
       sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
       sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
       sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1),
-      sb.from('bankumsaetze').select('id,konto,buchungsdatum,betrag,gegenpartei,verwendungszweck,buchungsstatus').order('buchungsdatum', { ascending: false }).limit(1000)
+      sb.from('bankumsaetze').select('id,konto,buchungsdatum,betrag,gegenpartei,verwendungszweck,buchungsstatus').order('buchungsdatum', { ascending: false }).limit(1000),
+      sb.from('wochenbudgets').select('*').order('sortierung', { ascending: true }),
+      sb.from('wochenausgaben').select('*').order('datum', { ascending: false }).limit(1000)
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data; S.bankumsaetze = r[6].data || [];
+    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data; S.bankumsaetze = r[6].data || []; S.wbudgets = r[7].data || []; S.wausgaben = r[8].data || [];
     S.loaded = true;
   }
   async function reload() {
@@ -103,7 +105,7 @@
   }
   async function logout() {
     try { await sb.auth.signOut(); } catch (e) { /* egal */ }
-    S.user = null; S.loaded = false; S.einnahmen = []; S.posten = []; S.zahlungen = []; S.staende = []; S.aufgaben = []; S.bankumsaetze = [];
+    S.user = null; S.loaded = false; S.einnahmen = []; S.posten = []; S.zahlungen = []; S.staende = []; S.aufgaben = []; S.bankumsaetze = []; S.wbudgets = []; S.wausgaben = [];
     closeModal();
     renderLogin();
   }
@@ -304,12 +306,24 @@
   }
 
   function viewWochenbudgets() {
-    var budgets = [{name:'Lebensmittel & Getränke',value:80},{name:'Katzenfutter',value:10},{name:'Sprit',value:30}];
-    var h = foldStart('money-weekly', 'Wochenbudgets · ' + eur(120) + ' pro Woche', true);
-    h += '<p class="note">Vereinbarte Planbudgets. Tatsächliche Ausgaben und verbleibende Beträge werden erst angezeigt, wenn Buchungen den Kategorien zugeordnet werden können. Monatsdurchschnitt: ' + eur(520) + ' (52 Wochen / 12).</p>';
+    var w = L.wochenStand(S, todayD());
+    var title = 'Wochenbudgets · ' + eur(w.rest) + ' übrig von ' + eur(w.total);
+    var h = foldStart('money-weekly', title, true);
+    h += '<p class="note">Woche vom ' + esc(fmtD(w.start)) + ' bis ' + esc(fmtD(w.end)) + ' · Trag Einkäufe ein, sie werden vom jeweiligen Budget abgezogen. Jeden Montag beginnt die Woche neu.</p>';
+    if (!w.list.length) h += '<div class="card"><div class="empty">Noch kein Wochenbudget angelegt.</div></div>';
     h += '<div class="weekly-budget-grid">';
-    budgets.forEach(function (b) { h += '<div class="card weekly-budget-card"><div class="s">' + esc(b.name) + '</div><strong>' + eur(b.value) + '</strong><div class="s">pro Woche</div></div>'; });
-    h += '</div></div></details>';
+    w.list.forEach(function (x) {
+      var pct = x.b.betrag > 0 ? Math.min(100, Math.round(x.spent / Number(x.b.betrag) * 100)) : 100;
+      var over = x.rest < 0;
+      h += '<div class="card weekly-budget-card" role="button" tabindex="0" data-action="wbudget-detail" data-id="' + esc(x.b.id) + '">' +
+        '<div class="s">' + esc(x.b.name) + '</div>' +
+        '<strong class="' + (over ? 'money-negative' : 'money-positive') + '">' + eur(x.rest) + '</strong>' +
+        '<div class="s">von ' + eur(Number(x.b.betrag)) + ' übrig</div>' +
+        '<div class="wbar"><span class="' + (over ? 'over' : '') + '" style="width:' + pct + '%"></span></div></div>';
+    });
+    h += '</div>';
+    if (w.list.length) h += '<button class="primary" data-action="wausgabe-neu">Ausgabe erfassen</button><div style="height:10px"></div>';
+    h += '<button data-action="wbudget-neu">Budget hinzufügen</button></div></details>';
     return h;
   }
 
@@ -497,6 +511,69 @@
     closeModal(); await loadAll(); render(); toast('Hinzugefügt');
   }
 
+  function modalWausgabe(budgetId) {
+    var w = L.wochenStand(S, todayD());
+    if (!w.list.length) { toast('Lege zuerst ein Budget an.'); return; }
+    var opts = w.list.map(function (x) { return '<option value="' + esc(x.b.id) + '"' + (x.b.id === budgetId ? ' selected' : '') + '>' + esc(x.b.name) + ' · ' + eur(x.rest) + ' übrig</option>'; }).join('');
+    openModal('<h1>Ausgabe erfassen</h1><form data-form="wausgabe">' +
+      '<label for="wa-b">Budget</label><select id="wa-b">' + opts + '</select>' +
+      '<label for="wa-s">Betrag in Euro</label><input id="wa-s" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 23,45" required>' +
+      '<label for="wa-d">Datum</label><input id="wa-d" type="date" value="' + L.iso(todayD()) + '" required>' +
+      '<label for="wa-n">Notiz (optional)</label><input id="wa-n" placeholder="zum Beispiel Rewe">' +
+      '<div class="err" id="wa-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
+    setTimeout(function () { var el = document.getElementById('wa-s'); if (el) el.focus(); }, 50);
+  }
+  async function saveWausgabe(form) {
+    var err = form.querySelector('#wa-err');
+    var b = L.parseBetrag(form.querySelector('#wa-s').value);
+    var d = form.querySelector('#wa-d').value;
+    if (!isFinite(b) || b <= 0 || !d) { err.textContent = 'Bitte gib einen Betrag größer als null und ein Datum ein.'; return; }
+    var r = await sb.from('wochenausgaben').insert({ budget_id: form.querySelector('#wa-b').value, betrag: b, datum: d, notiz: form.querySelector('#wa-n').value.trim() || null, erfasst_von: S.user.email });
+    if (r.error) throw r.error;
+    closeModal(); await loadAll(); render(); toast('Ausgabe erfasst');
+  }
+
+  function modalWbudgetDetail(id) {
+    var w = L.wochenStand(S, todayD());
+    var x = w.list.find(function (y) { return y.b.id === id; });
+    if (!x) return;
+    var rows = x.ausgaben.map(function (a) {
+      return '<div class="row"><div class="main"><div class="t">' + esc(a.notiz || 'Ausgabe') + '</div><div class="s">' + esc(fmtD(L.parseISO(a.datum))) + '</div></div><div class="amt">' + eur(Number(a.betrag)) + '</div>' +
+        '<button type="button" class="mini-del" data-action="wausgabe-delete" data-id="' + esc(a.id) + '" aria-label="Ausgabe löschen">×</button></div>';
+    }).join('');
+    openModal('<h1>' + esc(x.b.name) + '</h1>' +
+      '<p class="note">Diese Woche ' + eur(x.spent) + ' ausgegeben, ' + eur(x.rest) + ' übrig von ' + eur(Number(x.b.betrag)) + '.</p>' +
+      '<div class="card">' + (rows || '<div class="empty">Diese Woche noch nichts erfasst.</div>') + '</div>' +
+      '<div class="actions"><button type="button" data-action="close-modal">Schließen</button><button class="primary" type="button" data-action="wausgabe-neu" data-id="' + esc(x.b.id) + '">Ausgabe erfassen</button></div>' +
+      '<div style="height:10px"></div><button type="button" data-action="wbudget-edit" data-id="' + esc(x.b.id) + '">Budget bearbeiten</button>');
+  }
+
+  function modalWbudget(id) {
+    var b = id ? S.wbudgets.find(function (x) { return x.id === id; }) : null;
+    if (id && !b) return;
+    openModal('<h1>' + (b ? 'Budget bearbeiten' : 'Neues Wochenbudget') + '</h1><form data-form="wbudget" data-id="' + esc(b ? b.id : '') + '">' +
+      '<label for="wb-n">Name</label><input id="wb-n" value="' + esc(b ? b.name : '') + '" placeholder="zum Beispiel Drogerie" required>' +
+      '<label for="wb-b">Betrag pro Woche in Euro</label><input id="wb-b" inputmode="decimal" autocomplete="off" value="' + esc(b ? String(b.betrag).replace('.', ',') : '') + '" required>' +
+      '<div class="err" id="wb-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>' +
+      (b ? '<div style="height:12px"></div><button class="danger" data-action="wbudget-delete" data-id="' + esc(b.id) + '">Budget löschen</button><p class="note">Löscht auch alle erfassten Ausgaben dieses Budgets.</p>' : ''));
+  }
+  async function saveWbudget(form) {
+    var err = form.querySelector('#wb-err');
+    var name = form.querySelector('#wb-n').value.trim();
+    var b = L.parseBetrag(form.querySelector('#wb-b').value);
+    if (!name || !isFinite(b) || b < 0) { err.textContent = 'Bitte gib einen Namen und einen Betrag ein.'; return; }
+    var id = form.dataset.id;
+    var row = { name: name, betrag: b };
+    var r;
+    if (id) r = await sb.from('wochenbudgets').update(row).eq('id', id);
+    else {
+      row.sortierung = S.wbudgets.reduce(function (m, x) { return Math.max(m, Number(x.sortierung) || 0); }, 0) + 1;
+      r = await sb.from('wochenbudgets').insert(row);
+    }
+    if (r.error) throw r.error;
+    closeModal(); await loadAll(); render(); toast('Gespeichert');
+  }
+
   function modalAufgabe(id) {
     var a = id ? S.aufgaben.find(function (x) { return x.id === id; }) : null;
     var opt = function (v, label, cur) { return '<option value="' + v + '"' + (cur === v ? ' selected' : '') + '>' + label + '</option>'; };
@@ -552,10 +629,11 @@
   async function backup() {
     var r = await Promise.all([
       sb.from('einnahmen').select('*'), sb.from('posten').select('*'), sb.from('posten_zahlungen').select('*'),
-      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*')
+      sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*'),
+      sb.from('wochenbudgets').select('*'), sb.from('wochenausgaben').select('*')
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data };
+    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data, wochenbudgets: r[5].data, wochenausgaben: r[6].data };
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -587,6 +665,21 @@
     else if (a === 'abgleich') modalAbgleich();
     else if (a === 'posten-edit') modalPosten(id);
     else if (a === 'posten-neu') modalPostenNeu();
+    else if (a === 'wbudget-detail') modalWbudgetDetail(id);
+    else if (a === 'wausgabe-neu') modalWausgabe(id);
+    else if (a === 'wbudget-neu') modalWbudget(null);
+    else if (a === 'wbudget-edit') modalWbudget(id);
+    else if (a === 'wbudget-delete') {
+      if (!confirm('Dieses Budget samt Ausgaben wirklich löschen?')) return;
+      run(async function () { var r = await sb.from('wochenbudgets').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });
+    } else if (a === 'wausgabe-delete') {
+      if (!confirm('Diese Ausgabe löschen?')) return;
+      run(async function () {
+        var bid = (S.wausgaben.find(function (x) { return x.id === id; }) || {}).budget_id;
+        var r = await sb.from('wochenausgaben').delete().eq('id', id); if (r.error) throw r.error;
+        await loadAll(); render(); if (bid) modalWbudgetDetail(bid); toast('Gelöscht');
+      });
+    }
     else if (a === 'aufgabe-neu') modalAufgabe(null);
     else if (a === 'aufgabe-edit') modalAufgabe(id);
     else if (a === 'close-modal') closeModal();
@@ -604,6 +697,11 @@
       run(async function () { var r = await sb.from('aufgaben').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });
     }
   });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var el = e.target && e.target.closest && e.target.closest('[role=button][data-action]');
+    if (el) { e.preventDefault(); el.click(); }
+  });
   document.addEventListener('change', function (e) {
     var el = e.target;
     if (!el.dataset) return;
@@ -619,6 +717,8 @@
     else if (k === 'abgleich') run(function () { return saveAbgleich(f); });
     else if (k === 'posten-edit') run(function () { return savePosten(f); });
     else if (k === 'posten-neu') run(function () { return savePostenNeu(f); });
+    else if (k === 'wausgabe') run(function () { return saveWausgabe(f); });
+    else if (k === 'wbudget') run(function () { return saveWbudget(f); });
     else if (k === 'aufgabe') run(function () { return saveAufgabe(f); });
   });
   document.addEventListener('visibilitychange', function () {

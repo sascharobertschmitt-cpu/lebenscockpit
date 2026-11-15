@@ -164,3 +164,13 @@ nav button svg{flex:none}
   .dashboard-money-pair{gap:8px}
   .dashboard-money-item{padding:12px 6px}
 }
+
+.weekly-budget-grid{display:grid;gap:10px;margin-bottom:12px}
+.weekly-budget-card{margin:0;cursor:pointer;display:flex;flex-direction:column;gap:4px}
+.weekly-budget-card strong{font-size:24px;font-variant-numeric:tabular-nums}
+.weekly-budget-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wbar{height:6px;border-radius:3px;background:rgba(169,176,192,.18);overflow:hidden;margin-top:6px}
+.wbar span{display:block;height:100%;background:#69e2a4;border-radius:3px}
+.wbar span.over{background:#ff9bab}
+.mini-del{flex:0 0 auto;width:40px;min-height:40px;padding:0;font-size:20px;line-height:1}
+@media(min-width:700px){.weekly-budget-grid{grid-template-columns:repeat(3,1fr)}}

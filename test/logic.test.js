@@ -185,3 +185,14 @@ console.log('Alle Tests bestanden');
  assert.equal(c[0].count,2); close(c[0].sum,25.98); assert.equal(c[0].monthCount,2);
  assert.deepStrictEqual(L.recurringCandidates(null),[]);
 }
+
+// Wochenbudgets: Woche Montag bis Sonntag.
+{
+ const state={wbudgets:[{id:'a',name:'Essen',betrag:80,sortierung:1},{id:'b',name:'Sprit',betrag:30,sortierung:2},{id:'c',name:'Alt',betrag:5,aktiv:false}],
+  wausgaben:[{budget_id:'a',betrag:20.5,datum:'2026-11-09'},{budget_id:'a',betrag:10,datum:'2026-11-15'},{budget_id:'a',betrag:99,datum:'2026-11-16'},{budget_id:'a',betrag:99,datum:'2026-11-08'},{budget_id:'b',betrag:40,datum:'2026-11-11'}]};
+ assert.equal(L.iso(L.weekStart(new Date(2026,10,15))),'2026-11-09','Sonntag gehört zur Woche ab Montag');
+ assert.equal(L.iso(L.weekStart(new Date(2026,10,16))),'2026-11-16');
+ const w=L.wochenStand(state,new Date(2026,10,13));
+ assert.equal(w.list.length,2,'inaktive Budgets ausgeblendet');
+ close(w.list[0].rest,49.5); close(w.list[1].rest,-10); close(w.total,110); close(w.rest,39.5);
+}
