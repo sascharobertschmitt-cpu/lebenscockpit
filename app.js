@@ -301,11 +301,22 @@
     return h + '</div></div></details>';
   }
 
+  function viewWochenbudgets() {
+    var budgets = [{name:'Lebensmittel & Getränke',value:80},{name:'Katzenfutter',value:10},{name:'Sprit',value:30}];
+    var h = foldStart('money-weekly', 'Wochenbudgets · ' + eur(120) + ' pro Woche', true);
+    h += '<p class="note">Vereinbarte Planbudgets. Tatsächliche Ausgaben und verbleibende Beträge werden erst angezeigt, wenn Buchungen den Kategorien zugeordnet werden können. Monatsdurchschnitt: ' + eur(520) + ' (52 Wochen / 12).</p>';
+    h += '<div class="weekly-budget-grid">';
+    budgets.forEach(function (b) { h += '<div class="card weekly-budget-card"><div class="s">' + esc(b.name) + '</div><strong>' + eur(b.value) + '</strong><div class="s">pro Woche</div></div>'; });
+    h += '</div></div></details>';
+    return h;
+  }
+
   function viewGeld() {
     var t = todayD();
     var cs = L.periodStart(t);
     var m = L.monatSummary(S, cs, t);
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
+    h += viewWochenbudgets();
     h += foldStart('money-budget', 'Restbudget bis zum Gehalt', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
