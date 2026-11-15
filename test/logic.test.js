@@ -196,3 +196,14 @@ console.log('Alle Tests bestanden');
  assert.equal(w.list.length,2,'inaktive Budgets ausgeblendet');
  close(w.list[0].rest,49.5); close(w.list[1].rest,-10); close(w.total,110); close(w.rest,39.5);
 }
+
+// Variable monthly amounts and recorded payment precedence.
+{
+ const p={id:'variable',name:'Variable',rhythmus:'monatlich',tag_im_monat:4,betrag:10,raten_ab_nummer:1,raten_gesamt:3,raten_ab_datum:'2027-01-04',raten_schlussbetrag:9,raten_betraege:{'2027-02-04':10.25}};
+  assert.deepStrictEqual(L.installmentRows({zahlungen:[]},Object.assign({},p,{raten_betraege:{'3':8.5}})).map(r=>r.betrag),[10,10,8.5],'Schlüssel nach Ratennummer');
+ const s={posten:[p],zahlungen:[]};
+ assert.deepStrictEqual(L.installmentRows(s,p).map(r=>r.betrag),[10,10.25,9]);
+ close(L.itemsForPeriod(s,D('2027-01-25'),today)[0].betrag,10.25);
+ s.zahlungen.push({posten_id:p.id,finanzmonat:'2027-01-25',betrag:10.20});
+ close(L.installmentRows(s,p)[1].betrag,10.20);
+}

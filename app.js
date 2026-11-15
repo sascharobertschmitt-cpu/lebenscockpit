@@ -279,8 +279,9 @@
       var open = rows.filter(function (r) { return !r.paid; });
       var remaining = L.round2(open.reduce(function (sum, r) { return sum + r.betrag; }, 0));
       var next = open[0];
-      h += foldStart('plan-' + p.id, esc(p.name) + ' · ' + eur(remaining) + ' offen') +
+      h += foldStart('plan-' + p.id, esc(p.name) + ' · ' + eur(remaining) + (p.raten_betraege ? ' geplante Zahlungen offen' : ' offen')) +
         '<p class="note">' + (next ? 'Nächste offene Rate ' + next.number + ' von ' + p.raten_gesamt + ': ' + eur(next.betrag) + ' am ' + esc(next.date.toLocaleDateString('de-DE')) : 'Alle erfassten Raten bezahlt.') + '</p>' +
+        (p.notiz ? '<p class="note">' + esc(p.notiz) + '</p>' : '') +
         '<p class="note">' + open.length + ' Raten offen. Bereits vor der Übernahme gezahlte Raten sind nicht einzeln aufgeführt. Abhaken erfolgt in den Monatszahlungen.</p><div class="card">';
       rows.forEach(function (r) {
         h += '<div class="row' + (r.paid ? ' paid' : '') + '"><div class="main"><div class="t">Rate ' + r.number + ' von ' + p.raten_gesamt + '</div><div class="s">' + esc(r.date.toLocaleDateString('de-DE')) + ' · ' + (r.paid ? 'Bezahlt' : r.date < todayD() ? 'Überfällig / Zahlung prüfen' : 'Offen') + '</div></div><div class="amt">' + eur(r.betrag) + '</div></div>';
