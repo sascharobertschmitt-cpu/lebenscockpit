@@ -250,7 +250,31 @@
       .sort(function (a, b) { return b.monthCount - a.monthCount || b.count - a.count || a.name.localeCompare(b.name, 'de'); });
   }
 
+  // ---------- Wochenbudgets: Woche läuft Montag bis Sonntag ----------
+  function weekStart(d) {
+    const wd = (d.getDay() + 6) % 7; // Montag = 0
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - wd);
+  }
+  function wochenStand(state, today) {
+    const start = weekStart(today);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+    const from = iso(start), to = iso(end);
+    const budgets = (state.wbudgets || []).filter((b) => b.aktiv !== false)
+      .sort((a, b) => num(a.sortierung) - num(b.sortierung) || String(a.name).localeCompare(String(b.name), 'de'));
+    let total = 0, spentTotal = 0;
+    const list = budgets.map((b) => {
+      const ausgaben = (state.wausgaben || [])
+        .filter((x) => x.budget_id === b.id && String(x.datum).slice(0, 10) >= from && String(x.datum).slice(0, 10) < to)
+        .sort((a, c) => String(c.datum).localeCompare(String(a.datum)) || String(c.erfasst_am).localeCompare(String(a.erfasst_am)));
+      const spent = round2(ausgaben.reduce((v, x) => v + num(x.betrag), 0));
+      total += num(b.betrag); spentTotal += spent;
+      return { b: b, ausgaben: ausgaben, spent: spent, rest: round2(num(b.betrag) - spent) };
+    });
+    return { start: start, end: new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1), list: list, total: round2(total), spent: round2(spentTotal), rest: round2(total - spentTotal) };
+  }
+
   const api = {
+    weekStart, wochenStand,
     installmentRows, iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
     nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, bankPayee, recurringCandidates
   };

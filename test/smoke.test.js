@@ -26,6 +26,8 @@ const db = {
   posten: posten.map((p) => Object.assign({ tag_hinweis: null, notiz: null, status: 'sicher', kategorie: 'sonstiges' }, p)),
   posten_zahlungen: [{ id: 'z1', posten_id: 'auto1', finanzmonat: '2026-10-25', betrag: 86, erfasst_am: '2026-11-13T16:52:16Z' }],
   kontostaende: [{ id: 'k1', betrag: 1840, erfasst_am: '2026-11-13T17:00:00Z', erfasst_von: 'test' }],
+  wochenbudgets: [{ id: 'w1', name: 'Lebensmittel & Getränke', betrag: 80, sortierung: 1, aktiv: true }, { id: 'w2', name: 'Sprit', betrag: 30, sortierung: 2, aktiv: true }],
+  wochenausgaben: [{ id: 'x1', budget_id: 'w1', betrag: 23.45, datum: '2026-11-12', notiz: 'Rewe', erfasst_am: '2026-11-12T10:00:00Z' }, { id: 'x2', budget_id: 'w1', betrag: 50, datum: '2026-11-08', erfasst_am: '2026-11-08T10:00:00Z' }],
   aufgaben: [
     { id: 'a1', titel: 'Müll rausstellen', zustaendig: 'Luna', faellig: '2026-11-13', wiederholung: 'woechentlich', erledigt: false },
     { id: 'a2', titel: 'Paket abholen <b>x</b>', zustaendig: 'Sascha', faellig: null, wiederholung: null, erledigt: false },
@@ -106,6 +108,14 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   click({ action: 'tab', tab: 'heute' });
   assert.ok(/data-fold="today-future" open/.test(app()), 'Zukünftige Aufgaben bleiben geöffnet');
   assert.ok(/data-fold="today-finances"><summary>/.test(app()), 'Finanzlage bleibt geschlossen');
+
+  // Wochenbudgets: nur Ausgaben der laufenden Woche (Mo 9.11. bis So 15.11.) zählen
+  assert.ok(/56,55/.test(app()) && /110,00/.test(app()) && /Wochenbudgets/.test(app()), 'Wochenbudget zieht Ausgaben ab: ' + (app().match(/Wochenbudgets[^<]*/) || [''])[0]);
+  click({ action: 'wbudget-detail', id: 'w1' });
+  assert.ok(/Rewe/.test(elements.modal.innerHTML) && !/50,00/.test(elements.modal.innerHTML.replace(/80,00/, '')), 'Detail zeigt nur Ausgaben dieser Woche');
+  click({ action: 'wausgabe-neu', id: 'w2' });
+  assert.ok(/id="wa-s"/.test(elements.modal.innerHTML) && /value="w2" selected/.test(elements.modal.innerHTML), 'Ausgabe-Formular mit vorgewähltem Budget');
+  click({ action: 'close-modal' });
 
   // Geld
   click({ action: 'tab', tab: 'geld' });

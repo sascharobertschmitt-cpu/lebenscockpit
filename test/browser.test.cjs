@@ -40,6 +40,7 @@ async function setup(page, storageMode = 'normal') {
         { id: 'b3', konto: 'sascha', buchungsdatum: '2026-10-10', betrag: -40, gegenpartei: 'PayPal (Europe)', verwendungszweck: '6666666666 Otto', buchungsstatus: 'gebucht' },
         { id: 'b4', konto: 'sascha', buchungsdatum: '2026-11-12', betrag: -9, gegenpartei: 'Kaufland', verwendungszweck: '', buchungsstatus: 'vorgemerkt' }
       ],
+      wochenbudgets: [{ id: 'w1', name: 'Lebensmittel & Getränke', betrag: 80, sortierung: 1 }, { id: 'w2', name: 'Katzenfutter', betrag: 10, sortierung: 2 }], wochenausgaben: [],
       aufgaben: [
         { id: 'future', titel: 'Zukünftige Testaufgabe', faellig: '2026-12-01', erledigt: false },
         { id: 'undated', titel: 'Ohne Termin <b>Text</b>', faellig: null, erledigt: false },
