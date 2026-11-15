@@ -152,7 +152,9 @@
   //  - passt eine Vormerkung zu einem offenen Posten, zählt nur der Posten (Betrag = Bankbetrag);
   //  - passt sie zu einem bereits abgehakten Posten, zählt dessen Zahlung (Stand/nachStand);
   //  - gibt es dazu schon die gebuchte Zeile, zählt nur noch diese: seit dem letzten Kontostand
-  //    importiert = noch nicht im Stand (einmal abziehen), davor importiert = schon im Stand (nicht erneut).
+  //    importiert = noch nicht im Stand (einmal abziehen), davor importiert = schon im Stand (nicht erneut);
+  //  - gebuchte Umsätze, die nach dem Kontostand datiert und importiert wurden, werden wie Vormerkungen
+  //    behandelt (gleiche Posten-/Duplikatprüfung), alte Zeilen aus Nachimporten nie.
   const GENERIC = new Set(['paypal', 'europe', 'gmbh', 'cie', 'sarl', 'the', 'und', 'bei', 'vom', 'ihr', 'einkauf', 'rechnung', 'rate', 'raten', 'zahlung', 'zahlungen', 'lastschrift', 'sepa', 'konto', 'später', 'bezahlen', 'ratenzahlung', 'versicherungsnr', 'deutschland', 'kd', 'nr', 'rg', 'ag', 'kg', 'ohg', 'gesellschaft', 'reduziert', 'volle', 'letzte', 'abbuchung']);
   function bankTokens(s, minLen) {
     const out = new Set();
@@ -173,42 +175,59 @@
     const booked = rows.filter(function (x) { return x.buchungsstatus !== 'vorgemerkt'; });
     const standTs = stand ? new Date(stand.erfasst_am).getTime() : null;
     const used = new Set();
-    const res = { liste: [], summe: 0, zusaetzlich: 0, imPosten: 0, abgedeckt: 0, schonGebucht: 0 };
-    pend.forEach(function (x) {
-      const betrag = Math.abs(num(x.betrag));
-      const tok = rowTokens(x);
-      const entry = { row: x, betrag: betrag, art: 'zusaetzlich', item: null };
-      res.summe += betrag;
-      // 1) zu einer gebuchten Zeile geworden?
-      const gb = booked.find(function (b) {
-        return gleichBetrag(b.betrag, x.betrag) && /^\d{4}-\d{2}-\d{2}/.test(String(b.buchungsdatum)) && /^\d{4}-\d{2}-\d{2}/.test(String(x.buchungsdatum)) &&
-          Math.abs(daysBetween(parseISO(x.buchungsdatum), parseISO(b.buchungsdatum))) <= 7 && shareToken(tok, rowTokens(b));
-      });
-      if (gb) {
-        const inStand = !standTs || !gb.importiert_am || new Date(gb.importiert_am).getTime() <= standTs;
-        if (inStand) { entry.art = 'gebucht'; res.schonGebucht += betrag; res.liste.push(entry); return; }
-      }
-      // 2) passender Posten (offen zuerst, dann abgehakt)?
+    const res = { liste: [], summe: 0, zusaetzlich: 0, imPosten: 0, abgedeckt: 0, schonGebucht: 0, spaeterGebucht: 0 };
+    const sameDeal = function (b, x, tok) {
+      return gleichBetrag(b.betrag, x.betrag) && /^\d{4}-\d{2}-\d{2}/.test(String(b.buchungsdatum)) && /^\d{4}-\d{2}-\d{2}/.test(String(x.buchungsdatum)) &&
+        Math.abs(daysBetween(parseISO(x.buchungsdatum), parseISO(b.buchungsdatum))) <= 7 && shareToken(tok, rowTokens(b));
+    };
+    // Posten passend zu einer Bankzeile suchen (offen zuerst, dann abgehakt).
+    const matchPosten = function (betrag, tok) {
       const fits = function (it) {
         if (used.has(it) || (it.p.zahlung === 'bar')) return false;
-        const diff = Math.abs(it.betrag - betrag);
-        return diff <= Math.max(1, 0.1 * it.betrag) && shareToken(bankTokens(it.p.name, 3), tok);
+        return Math.abs(it.betrag - betrag) <= Math.max(1, 0.1 * it.betrag) && shareToken(bankTokens(it.p.name, 3), tok);
       };
       const best = function (list) { return list.filter(fits).sort(function (a, c) { return Math.abs(a.betrag - betrag) - Math.abs(c.betrag - betrag); })[0]; };
       const open = best(items.filter(function (it) { return !it.paid; }));
-      const paid = open ? null : best(items.filter(function (it) { return it.paid; }));
-      if (open) {
-        used.add(open); entry.art = 'posten'; entry.item = open;
-        entry.delta = round2(betrag - open.betrag); // Bankbetrag ersetzt den geplanten Betrag
+      return { open: open, paid: open ? null : best(items.filter(function (it) { return it.paid; })) };
+    };
+    const verbuchen = function (entry, betrag, tok) {
+      const m = matchPosten(betrag, tok);
+      if (m.open) {
+        used.add(m.open); entry.art = 'posten'; entry.item = m.open;
+        entry.delta = round2(betrag - m.open.betrag); // Bankbetrag ersetzt den geplanten Betrag
         res.imPosten += betrag; res.zusaetzlich += entry.delta;
-      } else if (paid) {
-        used.add(paid); entry.art = 'abgehakt'; entry.item = paid; res.abgedeckt += betrag;
+      } else if (m.paid) {
+        used.add(m.paid); entry.art = 'abgehakt'; entry.item = m.paid; res.abgedeckt += betrag;
       } else {
         res.zusaetzlich += betrag;
       }
       res.liste.push(entry);
+    };
+    pend.forEach(function (x) {
+      const betrag = Math.abs(num(x.betrag));
+      const tok = rowTokens(x);
+      res.summe += betrag;
+      // Zur gebuchten Zeile geworden und schon im Kontostand: nicht erneut abziehen.
+      const gb = booked.find(function (b) { return sameDeal(b, x, tok); });
+      if (gb && (!standTs || !gb.importiert_am || new Date(gb.importiert_am).getTime() <= standTs)) {
+        res.schonGebucht += betrag; res.liste.push({ row: x, betrag: betrag, art: 'gebucht', item: null }); return;
+      }
+      verbuchen({ row: x, betrag: betrag, art: 'zusaetzlich', item: null }, betrag, tok);
     });
-    ['summe', 'zusaetzlich', 'imPosten', 'abgedeckt', 'schonGebucht'].forEach(function (k) { res[k] = round2(res[k]); });
+    // Gebuchte Umsätze nach dem Kontostand (später importiert und später datiert) sind noch nicht im Stand.
+    // Zählen nur, wenn sie nicht schon als Vormerkung oder Posten erfasst sind.
+    if (standTs) {
+      const standTag = new Date(standTs).toISOString().slice(0, 10);
+      booked.forEach(function (b) {
+        const betrag = Math.abs(num(b.betrag));
+        if (!(num(b.betrag) < 0) || !b.importiert_am || new Date(b.importiert_am).getTime() <= standTs || String(b.buchungsdatum).slice(0, 10) <= standTag) return;
+        const tok = rowTokens(b);
+        if (pend.some(function (x) { return sameDeal(b, x, tok); })) return;
+        res.spaeterGebucht += betrag;
+        verbuchen({ row: b, betrag: betrag, art: 'spaeter-gebucht', item: null }, betrag, tok);
+      });
+    }
+    ['summe', 'zusaetzlich', 'imPosten', 'abgedeckt', 'schonGebucht', 'spaeterGebucht'].forEach(function (k) { res[k] = round2(res[k]); });
     return res;
   }
 

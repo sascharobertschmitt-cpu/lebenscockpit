@@ -187,10 +187,10 @@
       '<div class="restbudget-line"><span>Saschas Kontostand</span><b>' + eur(konto) + '</b></div>' +
       '<div class="restbudget-line"><span>Verfügbarer Disporahmen insgesamt</span><b>' + eur(DISPO) + '</b></div>' +
       '<div class="restbudget-line"><span>Noch abzuziehende Zahlungen</span><b>− ' + eur(offen) + '</b></div>' +
-      (vm && vm.zusaetzlich ? '<div class="restbudget-line"><span>Vorgemerkte Umsätze (' + vm.liste.length + ', ' + eur(vm.summe) + ' gesamt)</span><b>− ' + eur(vm.zusaetzlich) + '</b></div>' : '') +
+      (vm && vm.zusaetzlich ? '<div class="restbudget-line"><span>Vorgemerkt/neu gebucht (' + vm.liste.length + ' Umsätze, ' + eur(vm.summe + vm.spaeterGebucht) + ' gesamt)</span><b>− ' + eur(vm.zusaetzlich) + '</b></div>' : '') +
       '<div class="restbudget-line"><span>Spielraum Sascha</span><b>' + eur(rest) + '</b></div>' +
       '<div class="restbudget-line"><span>Lunas Kontostand</span><b>' + (luna == null ? 'Nicht erfasst' : eur(luna)) + '</b></div>' +
-      (vm && vm.liste.length ? '<p class="note">Vormerkungen sind noch nicht im Kontostand, gelten aber nicht als bezahlt. ' + (vm.imPosten ? eur(vm.imPosten) + ' gehören zu offenen Zahlungen und sind dort schon eingerechnet. ' : '') + (vm.schonGebucht ? eur(vm.schonGebucht) + ' sind inzwischen gebucht und im Kontostand. ' : '') + '</p>' : '') +
+      (vm && vm.liste.length ? '<p class="note">Vormerkungen sind noch nicht im Kontostand, gelten aber nicht als bezahlt. ' + (vm.imPosten ? eur(vm.imPosten) + ' gehören zu offenen Zahlungen und sind dort schon eingerechnet. ' : '') + (vm.schonGebucht ? eur(vm.schonGebucht) + ' sind inzwischen gebucht und im Kontostand. ' : '') + (vm.spaeterGebucht ? eur(vm.spaeterGebucht) + ' gebucht seit dem Kontostand, noch nicht darin. ' : '') + '</p>' : '') +
       '<p class="note">Ohne zusätzliche Einkäufe und nicht erfasste Kosten. Bargeldzahlungen sind in dieser Kontorechnung nicht berücksichtigt.</p>' +
       '</section>';
     return h;

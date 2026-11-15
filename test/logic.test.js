@@ -289,6 +289,18 @@ console.log('Alle Tests bestanden');
   const sx = base();
   sx.bankumsaetze.push(vm(9, '2026-11-12', -10, 'WOLSDORFF TOBACCO GMBH', '', { buchungsstatus: 'gebucht', importiert_am: '2026-11-13T19:00:00Z' }));
   close(L.calcLage(sx, t, 0).verfuegbar, mit.verfuegbar, 'fremde Buchung mit gleichem Betrag');
+  // Gebuchter Umsatz nach dem Stand (später datiert und importiert), ohne Posten/Vormerkung: wird abgezogen.
+  const sb = base();
+  sb.bankumsaetze.push(vm(10, '2026-11-14', -15, 'Rewe Markt', '', { buchungsstatus: 'gebucht', importiert_am: '2026-11-15T09:00:00Z' }));
+  close(mit.verfuegbar - L.calcLage(sb, t, 0).verfuegbar, 15, 'später gebuchter Umsatz');
+  // Gleicher Umsatz, aber vor dem Stand datiert (Nachimport alter Zeilen): nicht abziehen.
+  const sb2 = base();
+  sb2.bankumsaetze.push(vm(10, '2026-11-12', -15, 'Rewe Markt', '', { buchungsstatus: 'gebucht', importiert_am: '2026-11-15T09:00:00Z' }));
+  close(L.calcLage(sb2, t, 0).verfuegbar, mit.verfuegbar, 'alte Buchung beim Nachimport');
+  // Später gebuchter Posten (Otelo): zählt über den Posten, nicht doppelt.
+  const sb3 = base();
+  sb3.bankumsaetze.push(vm(10, '2026-11-14', -24.99, 'Vodafone GmbH otelo', '', { buchungsstatus: 'gebucht', importiert_am: '2026-11-15T09:00:00Z' }));
+  close(L.calcLage(sb3, t, 0).verfuegbar, mit.verfuegbar, 'gebuchter Posten nicht doppelt');
   // Wochenausgaben bleiben reines Tracking.
   const sw = base(); sw.wbudgets = [{ id: 'w', name: 'Essen', betrag: 80, aktiv: true }]; sw.wausgaben = [{ budget_id: 'w', betrag: 33, datum: '2026-11-14', erfasst_am: '2026-11-14T10:00:00Z' }];
   close(L.calcLage(sw, t, 0).verfuegbar, mit.verfuegbar, 'Wochenausgaben ohne Einfluss');
