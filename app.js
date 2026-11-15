@@ -175,7 +175,7 @@
     if (!lage.stand || !lage.next) return '';
     var konto = Number(lage.stand.betrag);
     var luna = lage.luna ? Number(lage.luna.betrag) : null;
-    var offen = lage.offen + lage.nachStand;
+    var offen = lage.offenAnzeige + lage.nachStand;
     var rest = lage.verfuegbar;
     var vm = lage.vorgemerkt;
     var combined = lage.gesamt;
@@ -184,13 +184,13 @@
       '<p class="note">Rechnerischer Spielraum bis ' + esc(fmtD(lage.next.date)) + ' – inklusive Dispo, kein reines Guthaben.</p>' +
       '<div class="restbudget-total"><span>Gemeinsam verbleibend</span><strong>' +
       (combined == null ? 'Lunas Stand fehlt' : eur(combined)) + '</strong></div>' +
-      '<div class="restbudget-line"><span>Saschas Kontostand</span><b>' + eur(konto) + '</b></div>' +
+      '<div class="restbudget-line"><span>Saschas Kontostand (Bank)</span><b>' + eur(konto) + '</b></div>' +
+      (vm && vm.abzug ? '<div class="restbudget-line"><span>Vorgemerkt, noch nicht abgebucht</span><b>− ' + eur(vm.abzug) + '</b></div><div class="restbudget-line"><span>Kontostand nach Vormerkungen</span><b>' + eur(lage.kontoNachVormerkung) + '</b></div>' : '') +
       '<div class="restbudget-line"><span>Verfügbarer Disporahmen insgesamt</span><b>' + eur(DISPO) + '</b></div>' +
       '<div class="restbudget-line"><span>Noch abzuziehende Zahlungen</span><b>− ' + eur(offen) + '</b></div>' +
-      (vm && vm.zusaetzlich ? '<div class="restbudget-line"><span>Vorgemerkt/neu gebucht (' + vm.liste.length + ' Umsätze, ' + eur(vm.summe + vm.spaeterGebucht) + ' gesamt)</span><b>− ' + eur(vm.zusaetzlich) + '</b></div>' : '') +
       '<div class="restbudget-line"><span>Spielraum Sascha</span><b>' + eur(rest) + '</b></div>' +
       '<div class="restbudget-line"><span>Lunas Kontostand</span><b>' + (luna == null ? 'Nicht erfasst' : eur(luna)) + '</b></div>' +
-      (vm && vm.liste.length ? '<p class="note">Vormerkungen sind noch nicht im Kontostand, gelten aber nicht als bezahlt. ' + (vm.imPosten ? eur(vm.imPosten) + ' gehören zu offenen Zahlungen und sind dort schon eingerechnet. ' : '') + (vm.schonGebucht ? eur(vm.schonGebucht) + ' sind inzwischen gebucht und im Kontostand. ' : '') + (vm.spaeterGebucht ? eur(vm.spaeterGebucht) + ' gebucht seit dem Kontostand, noch nicht darin. ' : '') + '</p>' : '') +
+      (vm && vm.liste.length ? '<p class="note">Vormerkungen sind im Bankkontostand noch nicht abgezogen und werden hier davon abgezogen. Sie gelten nicht als bezahlt; den Haken setzt du beim Aktualisieren des Kontostands.' + (vm.schonGebucht ? ' ' + eur(vm.schonGebucht) + ' sind inzwischen gebucht und schon im Kontostand.' : '') + '</p>' : '') +
       '<p class="note">Ohne zusätzliche Einkäufe und nicht erfasste Kosten. Bargeldzahlungen sind in dieser Kontorechnung nicht berücksichtigt.</p>' +
       '</section>';
     return h;
@@ -216,7 +216,7 @@
       var l = lage.luna ? Number(lage.luna.betrag) : null;
       h += '<div class="hero neutral">';
       h += '<div class="dashboard-money-pair">' +
-        '<div class="dashboard-money-item"><span>Saschas Kontostand</span><strong class="' + (Number(lage.stand.betrag) < 0 ? 'money-negative' : 'money-positive') + '">' + eur(Number(lage.stand.betrag)) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Saschas Kontostand' + (lage.vorgemerkt.abzug ? ' nach Vormerkungen' : '') + '</span><strong class="' + (lage.kontoNachVormerkung < 0 ? 'money-negative' : 'money-positive') + '">' + eur(lage.kontoNachVormerkung) + '</strong></div>' +
         '<div class="dashboard-money-item"><span>Lunas Kontostand</span><strong class="' + (l == null ? '' : l < 0 ? 'money-negative' : 'money-positive') + '">' + (l == null ? 'Nicht erfasst' : eur(l)) + '</strong></div>' +
         '<div class="dashboard-money-item"><span>Saschas Spielraum bis zum 25. inkl. Dispo</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.verfuegbar) + '</strong></div>' +
         '<div class="dashboard-money-item"><span>Gemeinsam bis zum 25. verfügbar inkl. Dispo</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
@@ -230,8 +230,8 @@
     h += '<div class="grid2">' + balanceCard('Saschas Konto', lage.stand) + balanceCard('Lunas Konto', lage.luna) + '</div>';
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
-      h += '<div class="stat"><div class="k">Offen bis zum 25.</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div>';
-      if (Number(lage.stand.betrag) < 0) {
+      h += '<div class="stat"><div class="k">Offen bis zum 25.</div><div class="v">' + eur(lage.offenAnzeige + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div>';
+      if (lage.kontoNachVormerkung < 0) {
         h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
       }
       if (age >= 7) h += '<div class="warn">Saschas Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';

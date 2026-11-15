@@ -254,6 +254,11 @@ console.log('Alle Tests bestanden');
   close(mit.vorgemerkt.summe, 157.89, 'Vormerkungen gesamt');
   close(mit.vorgemerkt.imPosten, 67.78, 'zu offenen Posten gehörend');
   close(mit.vorgemerkt.zusaetzlich, 90.11, 'nur zusätzlich abgezogen');
+  // Anzeige: Kontostand um alle 157,89 € gekürzt, offene Posten ohne die vorgemerkten.
+  close(mit.vorgemerkt.abzug, 157.89, 'Abzug vom Kontostand');
+  close(mit.kontoNachVormerkung, 1000 - 157.89, 'Kontostand nach Vormerkungen');
+  close(vorher.offen - mit.offenAnzeige, 67.78, 'offen ohne vorgemerkte Posten');
+  close(mit.kontoNachVormerkung + 0 - mit.offenAnzeige - mit.nachStand, mit.verfuegbar, 'Rechnung geht auf');
   // Vormerkungen mit Posten werden nicht doppelt gezählt, fremde Vormerkungen schon.
   close(vorher.verfuegbar - mit.verfuegbar, 90.11, 'Differenz im Spielraum');
   close(mit.offen, vorher.offen, 'offene Posten unverändert');
