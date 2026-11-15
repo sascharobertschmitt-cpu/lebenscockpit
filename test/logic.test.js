@@ -150,3 +150,18 @@ console.log('Alle Tests bestanden');
   close(item.betrag, 80, 'Gebuchter Betrag bleibt maßgeblich');
   close(L.monatSummary(state, cs, today).bezahlt, 80, 'Bezahlt-Summe nutzt Buchung');
 }
+
+// Finite installment plans reuse their existing monthly post, including history.
+{
+ const p = {id:'plan',name:'Testplan',rhythmus:'monatlich',tag_im_monat:29,betrag:10,zahlung:'konto',raten_ab_nummer:2,raten_gesamt:4,raten_ab_datum:'2027-01-29',raten_schlussbetrag:9.5};
+ const state={posten:[p],zahlungen:[],einnahmen:[],staende:[]};
+ let rows=L.installmentRows(state,p);
+ assert.deepStrictEqual(rows.map(r=>L.iso(r.date)),['2027-01-29','2027-02-28','2027-03-29']);
+ close(rows.reduce((s,r)=>s+r.betrag,0),29.5);
+ close(L.itemsForPeriod(state,D('2027-03-25'),today)[0].betrag,9.5);
+ assert.equal(L.itemsForPeriod(state,D('2027-04-25'),today).length,0);
+ assert.equal(L.itemsForPeriod(state,D('2027-01-25'),today).length,1);
+ state.zahlungen.push({posten_id:'plan',finanzmonat:'2027-01-25',betrag:10});
+ assert.equal(L.installmentRows(state,p).filter(r=>!r.paid).length,2);
+ assert.equal(L.itemsForPeriod(state,D('2026-12-25'),today).length,1,'Older periods retain existing history');
+}
