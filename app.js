@@ -203,8 +203,10 @@
       var l = lage.luna ? Number(lage.luna.betrag) : null;
       h += '<div class="hero neutral"><div class="lbl">Finanzlage bis ' + esc(fmtD(lage.next.date)) + '</div>';
       h += '<div class="dashboard-money-pair">' +
-        '<div class="dashboard-money-item"><span>Saschas Konto: ' + (lage.luecke != null ? 'Fehlbetrag' : 'Spielraum') + '</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
-        '<div class="dashboard-money-item"><span>Gemeinsam noch verfügbar</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Saschas Kontostand</span><strong class="' + (Number(lage.stand.betrag) < 0 ? 'money-negative' : 'money-positive') + '">' + eur(Number(lage.stand.betrag)) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Lunas Kontostand</span><strong class="' + (l == null ? '' : l < 0 ? 'money-negative' : 'money-positive') + '">' + (l == null ? 'Nicht erfasst' : eur(l)) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Saschas Spielraum bis Gehalt inkl. Dispo</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Gemeinsam bis Gehalt verfügbar inkl. Dispo</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
         '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p></div>';
 
     }
@@ -284,6 +286,21 @@
     return h;
   }
 
+  function viewPaypalOffen() {
+    var rows = S.posten.filter(function (p) { return p.name && p.name.indexOf('PayPal Später Bezahlen · ') === 0 && p.faellig_am; })
+      .map(function (p) { return { p: p, date: new Date(p.faellig_am + 'T12:00:00'), paid: S.zahlungen.some(function (z) { return z.posten_id === p.id; }) }; })
+      .filter(function (x) { return !x.paid; })
+      .sort(function (a, b) { return a.date - b.date || a.p.name.localeCompare(b.p.name); });
+    var sum = L.round2(rows.reduce(function (v, x) { return v + Number(x.p.betrag); }, 0));
+    var h = foldStart('money-paypal', 'PayPal Später Bezahlen · ' + rows.length + ' offen · ' + eur(sum), true);
+    h += '<p class="note">Alle erfassten offenen PayPal-Einmalzahlungen, auch außerhalb des aktuellen Finanzmonats. Kirstein steht separat unter Ratenpläne.</p><div class="card">';
+    rows.forEach(function (x) {
+      h += '<div class="row"><div class="main" data-action="posten-edit" data-id="' + esc(x.p.id) + '"><div class="t">' + esc(x.p.name.replace('PayPal Später Bezahlen · ', '')) + '</div><div class="s">Fällig ' + esc(fmtD(x.date)) + '</div></div><div class="amt">' + eur(Number(x.p.betrag)) + '</div></div>';
+    });
+    h += rows.length ? '' : '<div class="empty">Keine offenen PayPal-Einmalzahlungen.</div>';
+    return h + '</div></div></details>';
+  }
+
   function viewGeld() {
     var t = todayD();
     var cs = L.periodStart(t);
@@ -298,6 +315,7 @@
       (m.bar ? '<tr><td colspan="2" style="text-align:left;font-size:12.5px;color:var(--muted);border:0;padding-top:0">davon bar reserviert ' + eur(m.bar) + '</td></tr>' : '') +
       '<tr class="now"><td>Rest nach erfassten Zahlungen</td><td style="color:var(--' + (m.rest < 0 ? 'danger' : 'ok') + ')">' + eur(m.rest) + '</td></tr></table></div></div></details>';
 
+    h += viewPaypalOffen();
     h += '<button data-action="posten-neu">Zahlung hinzufügen</button><p class="note">Klarna und Kreditkarte trägst du als einzelne Zahlung mit Datum ein.</p>';
 
     var offen = m.items.filter(function (i) { return !i.paid; });
