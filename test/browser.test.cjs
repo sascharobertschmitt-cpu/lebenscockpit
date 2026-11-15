@@ -75,6 +75,7 @@ async function check(browserType, width) {
       node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height < parseFloat(getComputedStyle(node).lineHeight) * 1.5
     )), true, 'Dashboard amounts fit on one line without clipping');
     assert(!((await pair.textContent()).includes('Lunas Stand fehlt')), 'Luna remains visible after 35 Sascha updates');
+    assert.match(await page.locator('[data-fold="money-weekly"]').textContent(), /Lebensmittel & Getränke|Lebensmittel/);
     await page.locator('[data-fold="today-future"] summary').click();
     await page.locator('[data-fold="today-finances"] summary').click();
     await page.waitForFunction(() => JSON.parse(localStorage.getItem('cockpit-folds'))['today-future'] === true);
@@ -84,7 +85,7 @@ async function check(browserType, width) {
     await page.locator('[data-fold="today-finances"] summary').click();
     await page.screenshot({ path: path.join(output, `${browserType.name()}-${width}-dashboard.png`), fullPage: true });
     await page.locator('[data-action="tab"][data-tab="geld"]').click();
-    assert.equal(await page.locator('details').count(), 6);
+    assert.equal(await page.locator('details').count(), 8, 'Money view includes weekly budgets and PayPal overview');
     await page.locator('[data-fold="plan-plan-test"] summary').click();
     assert.equal(await page.locator('[data-fold="plan-plan-test"] .row').count(), 3);
     assert.match(await page.locator('[data-fold="plan-plan-test"]').textContent(), /9,50/);
