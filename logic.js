@@ -145,6 +145,92 @@
     return { sum: round2(sum), list: list };
   }
 
+  // ---------- Vorgemerkte Bankumsätze ----------
+  // Vormerkungen sind noch nicht im Bankkontostand abgezogen, aber so gut wie sicher.
+  // Sie mindern den Spielraum, ohne etwas als bezahlt zu markieren (keine posten_zahlungen).
+  // Doppelzählung wird verhindert:
+  //  - passt eine Vormerkung zu einem offenen Posten, zählt nur der Posten (Betrag = Bankbetrag);
+  //  - passt sie zu einem bereits abgehakten Posten, zählt dessen Zahlung (Stand/nachStand);
+  //  - gibt es dazu schon die gebuchte Zeile, zählt nur noch diese: seit dem letzten Kontostand
+  //    importiert = noch nicht im Stand (einmal abziehen), davor importiert = schon im Stand (nicht erneut);
+  //  - gebuchte Umsätze, die nach dem Kontostand datiert und importiert wurden, werden wie Vormerkungen
+  //    behandelt (gleiche Posten-/Duplikatprüfung), alte Zeilen aus Nachimporten nie.
+  const GENERIC = new Set(['paypal', 'europe', 'gmbh', 'cie', 'sarl', 'the', 'und', 'bei', 'vom', 'ihr', 'einkauf', 'rechnung', 'rate', 'raten', 'zahlung', 'zahlungen', 'lastschrift', 'sepa', 'konto', 'später', 'bezahlen', 'ratenzahlung', 'versicherungsnr', 'deutschland', 'kd', 'nr', 'rg', 'ag', 'kg', 'ohg', 'gesellschaft', 'reduziert', 'volle', 'letzte', 'abbuchung']);
+  function bankTokens(s, minLen) {
+    const out = new Set();
+    String(s == null ? '' : s).toLowerCase().split(/[^\p{L}\p{N}]+/u).forEach(function (t) {
+      if (t.length >= minLen && !/^\d+$/.test(t) && !GENERIC.has(t)) out.add(t);
+    });
+    return out;
+  }
+  function rowTokens(x) { return bankTokens((x.gegenpartei || '') + ' ' + (x.verwendungszweck || ''), 3); }
+  function shareToken(a, b) { for (const t of a) if (b.has(t)) return true; return false; }
+  const gleichBetrag = (a, b) => Math.abs(num(a) - num(b)) < 0.005;
+
+  function vorgemerkt(state, today, items, stand, konto) {
+    konto = konto || 'sascha';
+    const rows = (state.bankumsaetze || []).filter(function (x) { return (x.konto || 'sascha') === konto; });
+    const pend = rows.filter(function (x) { return x.buchungsstatus === 'vorgemerkt' && num(x.betrag) < 0; })
+      .sort(function (a, b) { return String(a.buchungsdatum).localeCompare(String(b.buchungsdatum)) || String(a.id).localeCompare(String(b.id)); });
+    const booked = rows.filter(function (x) { return x.buchungsstatus !== 'vorgemerkt'; });
+    const standTs = stand ? new Date(stand.erfasst_am).getTime() : null;
+    const used = new Set();
+    const res = { liste: [], summe: 0, zusaetzlich: 0, imPosten: 0, abgedeckt: 0, schonGebucht: 0, spaeterGebucht: 0 };
+    const sameDeal = function (b, x, tok) {
+      return gleichBetrag(b.betrag, x.betrag) && /^\d{4}-\d{2}-\d{2}/.test(String(b.buchungsdatum)) && /^\d{4}-\d{2}-\d{2}/.test(String(x.buchungsdatum)) &&
+        Math.abs(daysBetween(parseISO(x.buchungsdatum), parseISO(b.buchungsdatum))) <= 7 && shareToken(tok, rowTokens(b));
+    };
+    // Posten passend zu einer Bankzeile suchen (offen zuerst, dann abgehakt).
+    const matchPosten = function (betrag, tok) {
+      const fits = function (it) {
+        if (used.has(it) || (it.p.zahlung === 'bar')) return false;
+        return Math.abs(it.betrag - betrag) <= Math.max(1, 0.1 * it.betrag) && shareToken(bankTokens(it.p.name, 3), tok);
+      };
+      const best = function (list) { return list.filter(fits).sort(function (a, c) { return Math.abs(a.betrag - betrag) - Math.abs(c.betrag - betrag); })[0]; };
+      const open = best(items.filter(function (it) { return !it.paid; }));
+      return { open: open, paid: open ? null : best(items.filter(function (it) { return it.paid; })) };
+    };
+    const verbuchen = function (entry, betrag, tok) {
+      const m = matchPosten(betrag, tok);
+      if (m.open) {
+        used.add(m.open); entry.art = 'posten'; entry.item = m.open;
+        entry.delta = round2(betrag - m.open.betrag); // Bankbetrag ersetzt den geplanten Betrag
+        res.imPosten += betrag; res.zusaetzlich += entry.delta;
+      } else if (m.paid) {
+        used.add(m.paid); entry.art = 'abgehakt'; entry.item = m.paid; res.abgedeckt += betrag;
+      } else {
+        res.zusaetzlich += betrag;
+      }
+      res.liste.push(entry);
+    };
+    pend.forEach(function (x) {
+      const betrag = Math.abs(num(x.betrag));
+      const tok = rowTokens(x);
+      res.summe += betrag;
+      // Zur gebuchten Zeile geworden und schon im Kontostand: nicht erneut abziehen.
+      const gb = booked.find(function (b) { return sameDeal(b, x, tok); });
+      if (gb && (!standTs || !gb.importiert_am || new Date(gb.importiert_am).getTime() <= standTs)) {
+        res.schonGebucht += betrag; res.liste.push({ row: x, betrag: betrag, art: 'gebucht', item: null }); return;
+      }
+      verbuchen({ row: x, betrag: betrag, art: 'zusaetzlich', item: null }, betrag, tok);
+    });
+    // Gebuchte Umsätze nach dem Kontostand (später importiert und später datiert) sind noch nicht im Stand.
+    // Zählen nur, wenn sie nicht schon als Vormerkung oder Posten erfasst sind.
+    if (standTs) {
+      const standTag = new Date(standTs).toISOString().slice(0, 10);
+      booked.forEach(function (b) {
+        const betrag = Math.abs(num(b.betrag));
+        if (!(num(b.betrag) < 0) || !b.importiert_am || new Date(b.importiert_am).getTime() <= standTs || String(b.buchungsdatum).slice(0, 10) <= standTag) return;
+        const tok = rowTokens(b);
+        if (pend.some(function (x) { return sameDeal(b, x, tok); })) return;
+        res.spaeterGebucht += betrag;
+        verbuchen({ row: b, betrag: betrag, art: 'spaeter-gebucht', item: null }, betrag, tok);
+      });
+    }
+    ['summe', 'zusaetzlich', 'imPosten', 'abgedeckt', 'schonGebucht', 'spaeterGebucht'].forEach(function (k) { res[k] = round2(res[k]); });
+    return res;
+  }
+
   // ---------- Die Lage: Wie viel ist bis zum Ende des Finanzmonats (25.) frei? ----------
   // Gerechnet wird immer bis zum 25., unabhängig davon, wer wann Gehalt bekommt.
   function calcLage(state, today, dispo) {
@@ -156,7 +242,7 @@
     const luna = alle.find((x) => x.konto === 'luna') || null;
     const einnahmen = (state.einnahmen || []).filter((e) => incomeValid(e, end));
     const next = einnahmen.length ? { date: end, e: einnahmen.find((e) => iso(incomeDate(e, end.getFullYear(), end.getMonth())) === iso(end)) || null } : null;
-    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
+    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, vorgemerkt: null, vorgemerktLuna: null, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
     if (!next) return res;
     res.days = Math.max(1, daysBetween(today, end));
 
@@ -165,8 +251,10 @@
     const prev = addPeriods(cs, -1);
     const prevTracked = (state.zahlungen || []).some((z) => z.finanzmonat === iso(prev));
     const quellen = prevTracked ? [prev, cs] : [cs];
+    const alleItems = [];
     for (const start of quellen) {
       for (const it of itemsForPeriod(state, start, today)) {
+        if (start === cs || it.date || it.paid) alleItems.push(it);
         if (it.paid) continue;
         if (start !== cs && !it.date) continue;
         it.periode = iso(start);
@@ -178,6 +266,11 @@
     res.offen = round2(res.offen);
     res.barOffen = round2(res.barOffen);
 
+    // Vormerkungen: nur Abzug im Rechenmodell, keine Zahlung wird abgehakt.
+    res.vorgemerkt = vorgemerkt(state, today, alleItems, stand, 'sascha');
+    res.vorgemerktLuna = vorgemerkt(state, today, [], luna, 'luna');
+    res.vorgemerkt.liste.forEach(function (e) { if (e.art === 'posten') e.item.vorgemerkt = e.row; });
+
     if (stand) {
       const standTs = new Date(stand.erfasst_am).getTime();
       for (const z of state.zahlungen) {
@@ -188,8 +281,8 @@
       }
       res.nachStand = round2(res.nachStand);
       res.spielraum = round2(num(stand.betrag) + dispo);
-      res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand);
-      if (luna) res.gesamt = round2(res.verfuegbar + num(luna.betrag));
+      res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand - res.vorgemerkt.zusaetzlich);
+      if (luna) res.gesamt = round2(res.verfuegbar + num(luna.betrag) - res.vorgemerktLuna.summe);
       if (res.verfuegbar < 0) res.luecke = round2(-res.verfuegbar);
       else res.tagesbudget = round2(res.verfuegbar / res.days);
     }
@@ -287,7 +380,7 @@
   const api = {
     weekStart, wochenStand,
     installmentRows, iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
-    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, bankPayee, recurringCandidates
+    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, vorgemerkt, bankPayee, recurringCandidates
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Logic = api;
