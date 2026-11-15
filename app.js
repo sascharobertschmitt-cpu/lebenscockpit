@@ -182,6 +182,12 @@
     return h;
   }
 
+  function balanceCard(label, stand) {
+    var value = stand ? eur(Number(stand.betrag)) : 'Nicht erfasst';
+    var date = stand ? new Date(stand.erfasst_am).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Bitte Kontostand ergänzen';
+    return '<div class="stat"><div class="k">' + esc(label) + '</div><div class="v">' + esc(value) + '</div><div class="n">' + (stand ? 'Stand ' : '') + esc(date) + '</div></div>';
+  }
+
   function viewHeute() {
     var t = todayD();
     var lage = L.calcLage(S, t, DISPO);
@@ -205,15 +211,14 @@
 
     h += '</div></details>';
     h += foldStart('today-balances', 'Kontostände und Hinweise');
+    h += '<div class="grid2">' + balanceCard('Saschas Konto', lage.stand) + balanceCard('Lunas Konto', lage.luna) + '</div>';
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
-      var ageTxt = age <= 0 ? 'heute' : age === 1 ? 'gestern' : 'vor ' + age + ' Tagen';
-      h += '<div class="grid2"><div class="stat"><div class="k">Kontostand</div><div class="v">' + eur(Number(lage.stand.betrag)) + '</div><div class="n">Stand ' + ageTxt + '</div></div>' +
-        '<div class="stat"><div class="k">Offen bis Gehalt</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div></div>';
+      h += '<div class="stat"><div class="k">Offen bis Gehalt</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div>';
       if (Number(lage.stand.betrag) < 0) {
         h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
       }
-      if (age >= 7) h += '<div class="warn">Der Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
+      if (age >= 7) h += '<div class="warn">Saschas Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
       if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
