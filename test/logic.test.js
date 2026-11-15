@@ -196,3 +196,35 @@ console.log('Alle Tests bestanden');
  assert.equal(w.list.length,2,'inaktive Budgets ausgeblendet');
  close(w.list[0].rest,49.5); close(w.list[1].rest,-10); close(w.total,110); close(w.rest,39.5);
 }
+
+// Variable monthly amounts and recorded payment precedence.
+{
+ const p={id:'variable',name:'Variable',rhythmus:'monatlich',tag_im_monat:4,betrag:10,raten_ab_nummer:1,raten_gesamt:3,raten_ab_datum:'2027-01-04',raten_schlussbetrag:9,raten_betraege:{'2027-02-04':10.25}};
+  assert.deepStrictEqual(L.installmentRows({zahlungen:[]},Object.assign({},p,{raten_betraege:{'3':8.5}})).map(r=>r.betrag),[10,10,8.5],'Schlüssel nach Ratennummer');
+ const s={posten:[p],zahlungen:[]};
+ assert.deepStrictEqual(L.installmentRows(s,p).map(r=>r.betrag),[10,10.25,9]);
+ close(L.itemsForPeriod(s,D('2027-01-25'),today)[0].betrag,10.25);
+ s.zahlungen.push({posten_id:p.id,finanzmonat:'2027-01-25',betrag:10.20});
+ close(L.installmentRows(s,p)[1].betrag,10.20);
+}
+
+// Finanzmonat 25. bis 25.: Lunas Gehalt am 10. verkürzt den Zeitraum nicht.
+{
+  const st = { einnahmen: [{ person: 'Sascha', tag_im_monat: 25, betrag: 1 }, { person: 'Luna', tag_im_monat: 10, betrag: 1 }],
+    posten: [{ id: 'a', name: 'Miete', rhythmus: 'monatlich', tag_im_monat: 5, betrag: 100, zahlung: 'konto' },
+      { id: 'b', name: 'Strom', rhythmus: 'monatlich', tag_im_monat: 15, betrag: 200, zahlung: 'konto' }],
+    zahlungen: [], staende: [{ konto: 'sascha', betrag: 0, erfasst_am: '2026-11-01T00:00:00Z' }] };
+  for (const d of ['2026-11-26', '2026-12-09', '2026-12-11']) {
+    const l = L.calcLage(st, D(d), 0);
+    assert.strictEqual(L.iso(l.next.date), '2026-12-25', 'Ende Finanzmonat ' + d);
+    close(l.offen, 300, 'offen ' + d);
+  }
+  assert.strictEqual(L.calcLage(st, D('2026-11-26'), 0).next.e.person, 'Sascha');
+  // Vormonat ohne erfasste Zahlungen: nicht übernehmen (keine Geisterschulden).
+  close(L.calcLage(st, D('2026-12-26'), 0).offen, 300, 'Vormonat ungenutzt');
+  // Vormonat genutzt: unbezahlte Posten mit Termin bleiben offen.
+  st.zahlungen.push({ posten_id: 'a', finanzmonat: '2026-11-25', betrag: 100, erfasst_am: '2026-12-05T00:00:00Z' });
+  const l2 = L.calcLage(st, D('2026-12-26'), 0);
+  close(l2.offen, 500, 'Strom aus Vormonat bleibt offen');
+  assert.ok(l2.offenListe.some((i) => i.p.id === 'b' && i.periode === '2026-11-25'));
+}

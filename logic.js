@@ -40,7 +40,10 @@
     for (let n = p.raten_ab_nummer; n <= p.raten_gesamt; n++) {
       const date = dateIn(first.getFullYear(), first.getMonth() + n - p.raten_ab_nummer, first.getDate());
       const pay = state.zahlungen.find(z => z.posten_id === p.id && z.finanzmonat === iso(periodStart(date)));
-      rows.push({ number: n, date, paid: !!pay, betrag: pay ? num(pay.betrag) : n === p.raten_gesamt ? num(p.raten_schlussbetrag) : num(p.betrag) });
+      const rb = p.raten_betraege;
+      const override = rb ? (rb[iso(date)] != null ? rb[iso(date)] : rb[String(n)]) : null;
+      const planned = override != null && Number.isFinite(Number(override)) && Number(override) >= 0 ? Number(override) : n === p.raten_gesamt ? num(p.raten_schlussbetrag) : num(p.betrag);
+      rows.push({ number: n, date, paid: !!pay, betrag: pay ? num(pay.betrag) : planned });
     }
     return rows;
   }
@@ -142,30 +145,38 @@
     return { sum: round2(sum), list: list };
   }
 
-  // ---------- Die Lage: Wie viel ist bis zum nächsten Gehalt frei? ----------
+  // ---------- Die Lage: Wie viel ist bis zum Ende des Finanzmonats (25.) frei? ----------
+  // Gerechnet wird immer bis zum 25., unabhängig davon, wer wann Gehalt bekommt.
   function calcLage(state, today, dispo) {
     dispo = Number(dispo) || 0;
     const cs = periodStart(today);
+    const end = addPeriods(cs, 1);
     const alle = state.staende || [];
     const stand = alle.find((x) => (x.konto || 'sascha') === 'sascha') || null;
     const luna = alle.find((x) => x.konto === 'luna') || null;
-    const next = nextIncome(state, today);
+    const einnahmen = (state.einnahmen || []).filter((e) => incomeValid(e, end));
+    const next = einnahmen.length ? { date: end, e: einnahmen.find((e) => iso(incomeDate(e, end.getFullYear(), end.getMonth())) === iso(end)) || null } : null;
     const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
     if (!next) return res;
-    res.days = Math.max(1, daysBetween(today, next.date));
+    res.days = Math.max(1, daysBetween(today, end));
 
-    for (let k = 0; k <= 1; k++) {
-      const start = addPeriods(cs, k);
+    // Unbezahlte Posten mit Termin aus dem Vormonat bleiben offen, solange die App
+    // in diesem Monat schon genutzt wurde (sonst wären alte, nie abgehakte Monate Geisterschulden).
+    const prev = addPeriods(cs, -1);
+    const prevTracked = (state.zahlungen || []).some((z) => z.finanzmonat === iso(prev));
+    const quellen = prevTracked ? [prev, cs] : [cs];
+    for (const start of quellen) {
       for (const it of itemsForPeriod(state, start, today)) {
         if (it.paid) continue;
-        if (k === 1 && !it.date) continue;
-        if (it.date && it.date >= next.date) continue;
-        if (it.p.zahlung === 'bar') { res.barOffen += it.betrag; continue; }
+        if (start !== cs && !it.date) continue;
+        it.periode = iso(start);
+        if (it.p.zahlung === 'bar') { if (start === cs) res.barOffen += it.betrag; continue; }
         res.offen += it.betrag;
         res.offenListe.push(it);
       }
     }
     res.offen = round2(res.offen);
+    res.barOffen = round2(res.barOffen);
 
     if (stand) {
       const standTs = new Date(stand.erfasst_am).getTime();
