@@ -221,9 +221,38 @@
     return d;
   }
 
+  // ---------- Bankumsätze: wiederkehrende Abbuchungen ----------
+  // Sammelzahlungsdienste: hier zählt der Händler aus dem Verwendungszweck, nicht "PayPal" selbst.
+  function bankPayee(x) {
+    const name = String(x.gegenpartei || '').trim();
+    if (!name) return '';
+    if (/^paypal\b/i.test(name)) {
+      // Transaktions-/Rechnungsnummern entfernen, damit gleiche Händler zusammenfallen.
+      const z = String(x.verwendungszweck || '').replace(/\d{4,}/g, ' ').replace(/[^\p{L}\p{N}& .-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40).trim();
+      return z && !/^(paypal|pp|ihr einkauf bei)?$/i.test(z) ? 'PayPal · ' + z : 'PayPal';
+    }
+    return name;
+  }
+  function recurringCandidates(rows) {
+    const grouped = {};
+    (rows || []).forEach(function (x) {
+      const betrag = Number(x.betrag);
+      const datum = String(x.buchungsdatum || '');
+      if (x.buchungsstatus === 'vorgemerkt' || !(betrag < 0) || !/^\d{4}-\d{2}/.test(datum)) return;
+      const name = bankPayee(x);
+      if (!name) return;
+      const key = name.toLocaleLowerCase('de-DE');
+      const g = grouped[key] || (grouped[key] = { name: name, months: {}, count: 0, sum: 0 });
+      g.count++; g.sum = round2(g.sum + Math.abs(betrag)); g.months[datum.slice(0, 7)] = true;
+    });
+    return Object.keys(grouped).map(function (k) { const g = grouped[k]; g.monthCount = Object.keys(g.months).length; return g; })
+      .filter(function (g) { return g.monthCount >= 2; })
+      .sort(function (a, b) { return b.monthCount - a.monthCount || b.count - a.count || a.name.localeCompare(b.name, 'de'); });
+  }
+
   const api = {
     installmentRows, iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
-    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2
+    nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2, bankPayee, recurringCandidates
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Logic = api;

@@ -316,19 +316,11 @@
   function viewBankumsaetze() {
     var rows = S.bankumsaetze || [];
     var booked = rows.filter(function (x) { return x.buchungsstatus !== 'vorgemerkt'; });
-    var grouped = {};
-    booked.filter(function (x) { return Number(x.betrag) < 0 && x.gegenpartei && x.gegenpartei.trim(); }).forEach(function (x) {
-      var name = x.gegenpartei.trim();
-      var key = name.toLocaleLowerCase('de-DE');
-      if (!grouped[key]) grouped[key] = { name: name, months: {}, count: 0, sum: 0 };
-      var g = grouped[key]; g.count++; g.sum += Math.abs(Number(x.betrag));
-      g.months[x.buchungsdatum.slice(0, 7)] = true;
-    });
-    var candidates = Object.keys(grouped).map(function (k) { return grouped[k]; }).filter(function (g) { return Object.keys(g.months).length >= 2; }).sort(function (a,b) { return Object.keys(b.months).length - Object.keys(a.months).length || b.count - a.count; });
+    var candidates = L.recurringCandidates(rows);
     var h = foldStart('money-bank', 'Bankumsätze & wiederkehrende Abbuchungen', false);
     h += '<p class="note">' + rows.length + ' importierte Umsätze (' + booked.length + ' gebucht, ' + (rows.length-booked.length) + ' vorgemerkt). Wiederkehrend bedeutet hier: Abbuchungen beim selben Empfänger in mindestens zwei Kalendermonaten. Das sind Kandidaten, keine bestätigten Verträge.</p>';
     h += '<div class="card"><b>Wiederkehrende Zahlungsempfänger · ' + candidates.length + '</b>';
-    candidates.forEach(function (g) { h += '<div class="row"><div class="main"><div class="t">' + esc(g.name) + '</div><div class="s">' + g.count + ' Abbuchungen in ' + Object.keys(g.months).length + ' Monaten · gesamt ' + eur(g.sum) + '</div></div></div>'; });
+    candidates.forEach(function (g) { h += '<div class="row"><div class="main"><div class="t">' + esc(g.name) + '</div><div class="s">' + g.count + ' Abbuchungen in ' + g.monthCount + ' Monaten · gesamt ' + eur(g.sum) + '</div></div></div>'; });
     h += '</div><div class="card"><b>Letzte Bankumsätze</b>';
     rows.slice(0, 60).forEach(function (x) { h += '<div class="row"><div class="main"><div class="t">' + esc(x.gegenpartei || x.verwendungszweck || 'Buchung') + '</div><div class="s">' + esc(x.buchungsdatum) + (x.buchungsstatus === 'vorgemerkt' ? ' · vorgemerkt' : '') + '</div></div><div class="amt">' + eur(Number(x.betrag)) + '</div></div>'; });
     return h + '</div></div></details>';
