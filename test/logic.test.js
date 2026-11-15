@@ -165,3 +165,23 @@ console.log('Alle Tests bestanden');
  assert.equal(L.installmentRows(state,p).filter(r=>!r.paid).length,2);
  assert.equal(L.itemsForPeriod(state,D('2026-12-25'),today).length,1,'Older periods retain existing history');
 }
+
+// Wiederkehrende Abbuchungen aus Bankumsätzen.
+{
+ const rows=[
+  {gegenpartei:'Netflix',betrag:-12.99,buchungsdatum:'2026-09-03',buchungsstatus:'gebucht'},
+  {gegenpartei:'NETFLIX ',betrag:-12.99,buchungsdatum:'2026-10-03',buchungsstatus:'gebucht'},
+  {gegenpartei:'Netflix',betrag:-12.99,buchungsdatum:'2026-11-03',buchungsstatus:'vorgemerkt'},
+  {gegenpartei:'Rewe',betrag:-20,buchungsdatum:'2026-10-05'},{gegenpartei:'Rewe',betrag:-30,buchungsdatum:'2026-10-20'},
+  {gegenpartei:'Arbeitgeber',betrag:2000,buchungsdatum:'2026-09-30'},{gegenpartei:'Arbeitgeber',betrag:2000,buchungsdatum:'2026-10-30'},
+  {gegenpartei:'PayPal (Europe)',verwendungszweck:'1234567890 Spotify',betrag:-10,buchungsdatum:'2026-09-10'},
+  {gegenpartei:'PayPal (Europe)',verwendungszweck:'9876543210 Spotify',betrag:-10,buchungsdatum:'2026-10-10'},
+  {gegenpartei:'PayPal (Europe)',verwendungszweck:'5555555555 Zalando',betrag:-50,buchungsdatum:'2026-09-12'},
+  {gegenpartei:'PayPal (Europe)',verwendungszweck:'6666666666 Otto',betrag:-40,buchungsdatum:'2026-10-15'},
+  {gegenpartei:null,betrag:-5,buchungsdatum:'2026-09-01'},{gegenpartei:'Defekt',betrag:-5,buchungsdatum:null},{gegenpartei:'Defekt',betrag:'x',buchungsdatum:'2026-10-01'}
+ ];
+ const c=L.recurringCandidates(rows);
+ assert.deepStrictEqual(c.map(g=>g.name),['Netflix','PayPal · Spotify'],'nur gebuchte Abbuchungen, PayPal je Händler, kein Einkommen');
+ assert.equal(c[0].count,2); close(c[0].sum,25.98); assert.equal(c[0].monthCount,2);
+ assert.deepStrictEqual(L.recurringCandidates(null),[]);
+}

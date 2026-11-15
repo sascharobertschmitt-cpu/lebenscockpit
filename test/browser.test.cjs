@@ -34,6 +34,12 @@ async function setup(page, storageMode = 'normal') {
         ...Array.from({ length: 35 }, (_, i) => ({ betrag: 500 + i, konto: 'sascha', erfasst_am: new Date(2026, 10, 13, 17, 0, 35-i).toISOString() })),
         { betrag: 300, konto: 'luna', erfasst_am: '2026-10-01T12:00:00Z' }
       ],
+      bankumsaetze: [
+        { id: 'b1', konto: 'sascha', buchungsdatum: '2026-11-03', betrag: -12.99, gegenpartei: 'Netflix', verwendungszweck: 'Abo', buchungsstatus: 'gebucht' },
+        { id: 'b2', konto: 'sascha', buchungsdatum: '2026-10-03', betrag: -12.99, gegenpartei: 'Netflix', verwendungszweck: 'Abo', buchungsstatus: 'gebucht' },
+        { id: 'b3', konto: 'sascha', buchungsdatum: '2026-10-10', betrag: -40, gegenpartei: 'PayPal (Europe)', verwendungszweck: '6666666666 Otto', buchungsstatus: 'gebucht' },
+        { id: 'b4', konto: 'sascha', buchungsdatum: '2026-11-12', betrag: -9, gegenpartei: 'Kaufland', verwendungszweck: '', buchungsstatus: 'vorgemerkt' }
+      ],
       aufgaben: [
         { id: 'future', titel: 'Zukünftige Testaufgabe', faellig: '2026-12-01', erledigt: false },
         { id: 'undated', titel: 'Ohne Termin <b>Text</b>', faellig: null, erledigt: false },
@@ -86,6 +92,12 @@ async function check(browserType, width) {
     await page.screenshot({ path: path.join(output, `${browserType.name()}-${width}-dashboard.png`), fullPage: true });
     await page.locator('[data-action="tab"][data-tab="geld"]').click();
     assert.equal(await page.locator('details').count(), 9, 'Money view includes weekly budgets, bank transactions and PayPal overview');
+    await page.locator('[data-fold="money-bank"] summary').click();
+    const bank = await page.locator('[data-fold="money-bank"]').textContent();
+    assert.match(bank, /4 importierte Umsätze \(3 gebucht, 1 vorgemerkt\)/);
+    assert.match(bank, /Wiederkehrende Zahlungsempfänger · 1/);
+    assert.match(bank, /Netflix.*2 Abbuchungen in 2 Monaten/);
+    assert.doesNotMatch(bank, /Wiederkehrende Zahlungsempfänger[\s\S]*Kaufland[\s\S]*Letzte Bankumsätze/, 'vorgemerkt/einmalig nicht wiederkehrend');
     await page.locator('[data-fold="plan-plan-test"] summary').click();
     assert.equal(await page.locator('[data-fold="plan-plan-test"] .row').count(), 3);
     assert.match(await page.locator('[data-fold="plan-plan-test"]').textContent(), /9,50/);
