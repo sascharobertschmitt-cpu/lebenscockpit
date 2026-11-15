@@ -72,7 +72,7 @@
       sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
       sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
       sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1),
-      sb.from('bankumsaetze').select('id,konto,buchungsdatum,betrag,gegenpartei,verwendungszweck,buchungsstatus').order('buchungsdatum', { ascending: false }).limit(1000),
+      sb.from('bankumsaetze').select('id,konto,buchungsdatum,betrag,gegenpartei,verwendungszweck,buchungsstatus,importiert_am').order('buchungsdatum', { ascending: false }).limit(1000),
       sb.from('wochenbudgets').select('*').order('sortierung', { ascending: true }),
       sb.from('wochenausgaben').select('*').order('datum', { ascending: false }).limit(1000)
     ]);
@@ -177,6 +177,7 @@
     var luna = lage.luna ? Number(lage.luna.betrag) : null;
     var offen = lage.offen + lage.nachStand;
     var rest = lage.verfuegbar;
+    var vm = lage.vorgemerkt;
     var combined = lage.gesamt;
     var h = '<section class="card restbudget" aria-label="Verbleibendes Geld bis zum 25.">' +
       '<h2>Was bleibt bis zum 25.?</h2>' +
@@ -186,8 +187,10 @@
       '<div class="restbudget-line"><span>Saschas Kontostand</span><b>' + eur(konto) + '</b></div>' +
       '<div class="restbudget-line"><span>Verfügbarer Disporahmen insgesamt</span><b>' + eur(DISPO) + '</b></div>' +
       '<div class="restbudget-line"><span>Noch abzuziehende Zahlungen</span><b>− ' + eur(offen) + '</b></div>' +
+      (vm && vm.zusaetzlich ? '<div class="restbudget-line"><span>Vorgemerkte Umsätze (' + vm.liste.length + ', ' + eur(vm.summe) + ' gesamt)</span><b>− ' + eur(vm.zusaetzlich) + '</b></div>' : '') +
       '<div class="restbudget-line"><span>Spielraum Sascha</span><b>' + eur(rest) + '</b></div>' +
       '<div class="restbudget-line"><span>Lunas Kontostand</span><b>' + (luna == null ? 'Nicht erfasst' : eur(luna)) + '</b></div>' +
+      (vm && vm.liste.length ? '<p class="note">Vormerkungen sind noch nicht im Kontostand, gelten aber nicht als bezahlt. ' + (vm.imPosten ? eur(vm.imPosten) + ' gehören zu offenen Zahlungen und sind dort schon eingerechnet. ' : '') + (vm.schonGebucht ? eur(vm.schonGebucht) + ' sind inzwischen gebucht und im Kontostand. ' : '') + '</p>' : '') +
       '<p class="note">Ohne zusätzliche Einkäufe und nicht erfasste Kosten. Bargeldzahlungen sind in dieser Kontorechnung nicht berücksichtigt.</p>' +
       '</section>';
     return h;

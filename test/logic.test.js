@@ -228,3 +228,71 @@ console.log('Alle Tests bestanden');
   close(l2.offen, 500, 'Strom aus Vormonat bleibt offen');
   assert.ok(l2.offenListe.some((i) => i.p.id === 'b' && i.periode === '2026-11-25'));
 }
+
+// ---------- Vorgemerkte Bankumsätze ----------
+{
+  const t = new Date(2026, 10, 15);
+  const P = (id, name, betrag, tag) => ({ id, name, betrag, tag_im_monat: tag, rhythmus: 'monatlich', zahlung: 'konto', gueltig_ab: null, gueltig_bis: null, faellig_am: null });
+  const vm = (id, datum, betrag, gp, vz, extra) => Object.assign({ id, konto: 'sascha', buchungsdatum: datum, betrag, gegenpartei: gp, verwendungszweck: vz || '', buchungsstatus: 'vorgemerkt', importiert_am: '2026-11-15T08:39:42Z' }, extra);
+  const base = () => ({
+    posten: [P('gen', 'Generali', 7.03, 15), P('otelo', 'Otelo', 24.99, 14), P('key', 'Key Academy', 24.24, 15), P('dkv', 'DKV', 11.52, 16), P('rf', 'Rundfunk (Sascha)', 30, 15)],
+    einnahmen: [{ person: 'Sascha', betrag: 2000, tag_im_monat: 25, aktiv: true }],
+    zahlungen: [], aufgaben: [], wbudgets: [], wausgaben: [],
+    staende: [{ konto: 'sascha', betrag: 1000, erfasst_am: '2026-11-13T19:19:22Z' }, { konto: 'luna', betrag: 500, erfasst_am: '2026-11-13T19:36:44Z' }],
+    bankumsaetze: [
+      vm(1, '2026-11-13', -7.03, 'Generali Deutschland Krankenversicherung AG', 'Versicherungsnr.'),
+      vm(2, '2026-11-13', -24.99, 'Vodafone GmbH otelo', 'Rg.Nr. R681724858'),
+      vm(3, '2026-11-13', -10, 'PayPal Europe S.a.r.l. et Cie S.C.A', '1054416949475/. AldiTalk, Ihr Einkauf bei AldiTalk'),
+      vm(4, '2026-11-13', -80.11, 'Sascha Schmitt', 'Rechnung Darl.-Leistung 6904693159 Zinsen 80,11'),
+      vm(5, '2026-11-12', -24.24, 'the key - academy GmbH', 'THEKEY.ACADEMY-202513751 RATE VOM 15.11.2026'),
+      vm(6, '2026-11-11', -11.52, 'DKV KRANKENVERS. AG', 'KV336026542 01.11.2026 - 30.11.2026 11,52')
+    ]
+  });
+  const ohne = (s) => Object.assign(base(), { bankumsaetze: [] });
+
+  const mit = L.calcLage(base(), t, 0), vorher = L.calcLage(ohne(), t, 0);
+  close(mit.vorgemerkt.summe, 157.89, 'Vormerkungen gesamt');
+  close(mit.vorgemerkt.imPosten, 67.78, 'zu offenen Posten gehörend');
+  close(mit.vorgemerkt.zusaetzlich, 90.11, 'nur zusätzlich abgezogen');
+  // Vormerkungen mit Posten werden nicht doppelt gezählt, fremde Vormerkungen schon.
+  close(vorher.verfuegbar - mit.verfuegbar, 90.11, 'Differenz im Spielraum');
+  close(mit.offen, vorher.offen, 'offene Posten unverändert');
+  // Rundfunk (Sascha) darf nicht über den Namen "Sascha Schmitt" gematcht werden.
+  assert.ok(mit.offenListe.find((i) => i.p.id === 'rf' && !i.vorgemerkt), 'Rundfunk nicht fälschlich vorgemerkt');
+  assert.ok(mit.offenListe.filter((i) => i.vorgemerkt).length === 4);
+  // Nicht als bezahlt markiert: kein Posten wird paid, nachStand bleibt 0.
+  assert.strictEqual(mit.nachStand, 0);
+  assert.ok(mit.offenListe.every((i) => !i.paid));
+  // Gesamt (mit Luna) ebenfalls abgezogen.
+  close(vorher.gesamt - mit.gesamt, 90.11, 'gemeinsamer Spielraum');
+  // Lunas Vormerkungen mindern nur den gemeinsamen Betrag.
+  const sl = base(); sl.bankumsaetze.push(vm(7, '2026-11-14', -20, 'Lidl', '', { konto: 'luna' }));
+  const lL = L.calcLage(sl, t, 0);
+  close(lL.verfuegbar, mit.verfuegbar, 'Sascha unberührt von Luna-Vormerkung');
+  close(lL.gesamt, mit.gesamt - 20, 'Luna-Vormerkung im Gesamtbetrag');
+  // Bereits abgehakter Posten: nicht zusätzlich abziehen (Zahlung deckt ihn ab).
+  const sp = base(); sp.zahlungen = [{ posten_id: 'key', finanzmonat: '2026-10-25', betrag: 24.24, erfasst_am: '2026-11-14T10:00:00Z' }];
+  const lp = L.calcLage(sp, t, 0);
+  close(lp.vorgemerkt.abgedeckt, 24.24, 'abgehakter Posten deckt Vormerkung');
+  close(lp.vorgemerkt.zusaetzlich, 90.11, 'abgehakter Posten wird nicht erneut abgezogen');
+  // Wechsel zu gebucht, Zeile nach dem Stand importiert: genau einmal abziehen (Vormerkung + Buchung nicht doppelt).
+  const sg = base();
+  sg.bankumsaetze.push(vm(8, '2026-11-14', -10, 'PayPal Europe S.a.r.l. et Cie S.C.A', '1054416949475/. AldiTalk', { buchungsstatus: 'gebucht', importiert_am: '2026-11-16T08:00:00Z' }));
+  close(L.calcLage(sg, t, 0).verfuegbar, mit.verfuegbar, 'Vormerkung + Buchung zählen einmal');
+  // Buchung war schon vor dem Kontostand importiert: bereits im Stand, nicht erneut abziehen.
+  const sg2 = base();
+  sg2.bankumsaetze.push(vm(8, '2026-11-14', -10, 'PayPal Europe S.a.r.l. et Cie S.C.A', '1054416949475/. AldiTalk', { buchungsstatus: 'gebucht', importiert_am: '2026-11-13T19:00:00Z' }));
+  const l2 = L.calcLage(sg2, t, 0);
+  close(l2.verfuegbar - mit.verfuegbar, 10, 'schon im Stand enthalten');
+  close(l2.vorgemerkt.schonGebucht, 10);
+  // Gleicher Betrag, anderer Empfänger ist keine Duplikat-Buchung.
+  const sx = base();
+  sx.bankumsaetze.push(vm(9, '2026-11-12', -10, 'WOLSDORFF TOBACCO GMBH', '', { buchungsstatus: 'gebucht', importiert_am: '2026-11-13T19:00:00Z' }));
+  close(L.calcLage(sx, t, 0).verfuegbar, mit.verfuegbar, 'fremde Buchung mit gleichem Betrag');
+  // Wochenausgaben bleiben reines Tracking.
+  const sw = base(); sw.wbudgets = [{ id: 'w', name: 'Essen', betrag: 80, aktiv: true }]; sw.wausgaben = [{ budget_id: 'w', betrag: 33, datum: '2026-11-14', erfasst_am: '2026-11-14T10:00:00Z' }];
+  close(L.calcLage(sw, t, 0).verfuegbar, mit.verfuegbar, 'Wochenausgaben ohne Einfluss');
+  // Ohne Bankdaten verhält sich alles wie vorher.
+  assert.strictEqual(L.calcLage({ posten: [], einnahmen: base().einnahmen, zahlungen: [], staende: [] }, t, 0).vorgemerkt.summe, 0);
+}
+console.log('Vormerkungs-Tests bestanden');
