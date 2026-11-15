@@ -37,14 +37,14 @@ const db = {
 const calls = [];
 function from(table) {
   const q = { _t: table, _op: 'select' };
-  const chain = ['select', 'order', 'limit', 'eq', 'or'];
+  const chain = ['select', 'order', 'limit', 'eq', 'or', 'range', 'in'];
   chain.forEach((m) => { q[m] = () => q; });
   ['insert', 'update', 'delete', 'upsert'].forEach((m) => { q[m] = (arg) => { q._op = m; calls.push([table, m, arg]); return q; }; });
   q.then = (res) => res({ data: q._op === 'select' ? db[table] : null, error: null });
   return q;
 }
 const user = { email: 'test@example.com' };
-const saved = { 'cockpit-folds': JSON.stringify({ 'today-budget': true }) };
+const saved = { 'cockpit-folds': JSON.stringify({ 'today-balances': true }) };
 const sandbox = {
   localStorage: { getItem(key) { return saved[key] || null; }, setItem(key, value) { saved[key] = value; } },
   document, console, Intl, Date, Math, Number, String, Object, Array, JSON, Promise, setTimeout, clearTimeout, File: class {},
@@ -87,7 +87,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   const app = () => elements.app.innerHTML;
 
   // Heute
-  assert.ok(/Saschas Kontostand/.test(app()) && /Lunas Kontostand/.test(app()) && /Gemeinsam bis Gehalt verfügbar inkl\. Dispo/.test(app()), 'Heute zeigt beide Kontostände und den gemeinsamen Spielraum');
+  assert.ok(/Saschas Kontostand/.test(app()) && /Lunas Kontostand/.test(app()) && /Gemeinsam bis zum 25\. verfügbar inkl\. Dispo/.test(app()), 'Heute zeigt beide Kontostände und den gemeinsamen Spielraum');
   assert.ok(/dashboard-money-pair/.test(app()), 'Geldbeträge nebeneinander');
   assert.ok(/Zukünftige Aufgaben \(1\)/.test(app()) && /Termin vorbereiten/.test(app()), 'Zukünftige Aufgaben vollständig vorhanden');
   assert.ok(/Aufgaben ohne Termin \(1\)/.test(app()), 'Aufgaben ohne Termin separat');
@@ -97,7 +97,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.ok(/Noch zu klären/.test(app()) === false, 'Fixture hat keine Posten mit Status prüfen');
   assert.ok(!/Paket abholen <b>/.test(app()), 'HTML in Titeln wird maskiert');
 
-  assert.ok(/data-fold="today-budget" open/.test(app()), 'Gespeicherter Klappzustand wird beim Start geladen');
+  assert.ok(/data-fold="today-balances" open/.test(app()), 'Gespeicherter Klappzustand wird beim Start geladen');
 
   // Geöffnete Bereiche bleiben auch nach Tabwechseln erhalten.
   handlers.toggle.forEach((h) => h({ target: { dataset: { fold: 'today-future' }, open: true } }));

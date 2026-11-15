@@ -5,7 +5,7 @@
   var SUPABASE_URL = 'https://txxlniprkltweeenmexf.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_dRrI8RUR1X8ciGA8R8mUxg_CQYAYZua';
   var DISPO = 8000;
-  var VERSION = '1.1';
+  var VERSION = '1.2';
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
@@ -40,7 +40,6 @@
   function fmtD(d) { return d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }); }
   function fmtLong(d) { return d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }); }
   function todayD() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
-  function poss(n) { return /s$/i.test(n) ? n + "'" : n + 's'; }
   var toastTimer;
   function toast(msg) {
     $toast.textContent = msg;
@@ -50,17 +49,26 @@
   }
   function fail(err) {
     var m = (err && err.message) || String(err);
-    if (/jwt|token|not authenticated/i.test(m)) { toast('Bitte neu anmelden.'); logout(); return; }
+    if ((err && (err.status === 401 || err.code === 'PGRST301')) || /jwt expired|invalid jwt|not authenticated|refresh token/i.test(m)) { toast('Bitte neu anmelden.'); logout(); return; }
     toast('Fehler: ' + m);
   }
   var WDH = { taeglich: 'täglich', woechentlich: 'wöchentlich', monatlich: 'monatlich', jaehrlich: 'jährlich' };
 
   // ---------- Daten ----------
+  async function fetchAll(make) {
+    var out = [], size = 1000;
+    for (var from = 0; ; from += size) {
+      var r = await make().range(from, from + size - 1);
+      if (r.error) return r;
+      out = out.concat(r.data || []);
+      if (!r.data || r.data.length < size) return { data: out, error: null };
+    }
+  }
   async function loadAll() {
     var r = await Promise.all([
       sb.from('einnahmen').select('*'),
       sb.from('posten').select('*'),
-      sb.from('posten_zahlungen').select('*'),
+      fetchAll(function () { return sb.from('posten_zahlungen').select('*').order('id'); }),
       sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
       sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
       sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1),
@@ -170,8 +178,8 @@
     var offen = lage.offen + lage.nachStand;
     var rest = lage.verfuegbar;
     var combined = lage.gesamt;
-    var h = '<section class="card restbudget" aria-label="Verbleibendes Geld bis zum nächsten Gehalt">' +
-      '<h2>Was bleibt bis zum Gehalt?</h2>' +
+    var h = '<section class="card restbudget" aria-label="Verbleibendes Geld bis zum 25.">' +
+      '<h2>Was bleibt bis zum 25.?</h2>' +
       '<p class="note">Rechnerischer Spielraum bis ' + esc(fmtD(lage.next.date)) + ' – inklusive Dispo, kein reines Guthaben.</p>' +
       '<div class="restbudget-total"><span>Gemeinsam verbleibend</span><strong>' +
       (combined == null ? 'Lunas Stand fehlt' : eur(combined)) + '</strong></div>' +
@@ -196,20 +204,19 @@
     var lage = L.calcLage(S, t, DISPO);
     var h = head('Heute', fmtLong(t));
 
-    h += foldStart('today-finances', 'Finanzlage bis zum Gehalt', true);
+    h += foldStart('today-finances', lage.next ? 'Finanzlage bis ' + esc(fmtD(lage.next.date)) : 'Finanzlage', true);
     if (!lage.next) {
-      h += '<div class="card">Es ist kein Gehalt eingetragen.</div>';
+      h += '<div class="card">Es ist kein Einkommen eingetragen.</div>';
     } else if (!lage.stand) {
       h += '<div class="hero neutral"><div class="lbl">Noch kein Kontostand</div><div class="big">?</div><div class="sm">Trag deinen aktuellen Kontostand ein, dann rechnet die App.</div></div>';
     } else {
-      var who = poss(lage.next.e.person) + ' Gehalt am ' + fmtD(lage.next.date);
       var l = lage.luna ? Number(lage.luna.betrag) : null;
-      h += '<div class="hero neutral"><div class="lbl">Finanzlage bis ' + esc(fmtD(lage.next.date)) + '</div>';
+      h += '<div class="hero neutral">';
       h += '<div class="dashboard-money-pair">' +
         '<div class="dashboard-money-item"><span>Saschas Kontostand</span><strong class="' + (Number(lage.stand.betrag) < 0 ? 'money-negative' : 'money-positive') + '">' + eur(Number(lage.stand.betrag)) + '</strong></div>' +
         '<div class="dashboard-money-item"><span>Lunas Kontostand</span><strong class="' + (l == null ? '' : l < 0 ? 'money-negative' : 'money-positive') + '">' + (l == null ? 'Nicht erfasst' : eur(l)) + '</strong></div>' +
-        '<div class="dashboard-money-item"><span>Saschas Spielraum bis Gehalt inkl. Dispo</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.luecke != null ? -lage.luecke : lage.verfuegbar) + '</strong></div>' +
-        '<div class="dashboard-money-item"><span>Gemeinsam bis Gehalt verfügbar inkl. Dispo</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Saschas Spielraum bis zum 25. inkl. Dispo</span><strong class="' + (lage.luecke != null ? 'money-negative' : 'money-positive') + '">' + eur(lage.verfuegbar) + '</strong></div>' +
+        '<div class="dashboard-money-item"><span>Gemeinsam bis zum 25. verfügbar inkl. Dispo</span><strong class="' + (lage.gesamt == null ? '' : lage.gesamt >= 0 ? 'money-positive' : 'money-negative') + '">' + (lage.gesamt == null ? 'Lunas Stand fehlt' : eur(lage.gesamt)) + '</strong></div>' +
         '</div><p class="note">Rechnerischer Spielraum inklusive Dispo. Noch nicht alle Verpflichtungen erfasst.</p></div>';
 
     }
@@ -220,17 +227,14 @@
     h += '<div class="grid2">' + balanceCard('Saschas Konto', lage.stand) + balanceCard('Lunas Konto', lage.luna) + '</div>';
     if (lage.stand) {
       var age = L.daysBetween(new Date(lage.stand.erfasst_am), t);
-      h += '<div class="stat"><div class="k">Offen bis Gehalt</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div>';
+      h += '<div class="stat"><div class="k">Offen bis zum 25.</div><div class="v">' + eur(lage.offen + lage.nachStand) + '</div><div class="n">' + lage.offenListe.length + ' Zahlungen</div></div>';
       if (Number(lage.stand.betrag) < 0) {
         h += '<div class="warn">Dispo genutzt: ' + eur(-Number(lage.stand.betrag)) + ' von ' + eur0(DISPO) + ', noch frei: ' + eur(Math.max(0, lage.spielraum)) + '.</div>';
       }
       if (age >= 7) h += '<div class="warn">Saschas Kontostand ist ' + age + ' Tage alt. Die Zahlen stimmen nur, wenn er aktuell ist.</div>';
       var overdue = lage.offenListe.filter(function (it) { return it.date && it.date < t; });
-      if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
+      if (overdue.length) h += '<div class="warn">' + overdue.length + (overdue.length === 1 ? ' Zahlung mit vergangenem Termin ist' : ' Zahlungen mit vergangenem Termin sind') + ' noch nicht abgehakt, auch aus dem Vormonat. Beim Aktualisieren des Kontostands bestätigst du, was schon abgebucht wurde.</div>';
     }
-    h += '</div></details>';
-    h += foldStart('today-budget', 'Restbudget im Detail');
-    h += restbudget(lage);
     h += '</div></details>';
     h += '<button class="primary" data-action="abgleich">Kontostand aktualisieren</button>';
 
@@ -247,7 +251,7 @@
     var soon = lage.offenListe.filter(function (it) { return it.date && it.date >= t; });
     h += foldStart('today-payments', 'Bald fällige Zahlungen (' + soon.length + ')', false) + '<div class="card">' + (soon.length ? soon.map(function (it) {
       return '<div class="row"><div class="main"><div class="t">' + esc(it.p.name) + '</div><div class="s">' + esc(fmtD(it.date)) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
-    }).join('') : '<div class="empty">Bis zum nächsten Gehalt ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
+    }).join('') : '<div class="empty">Bis zum 25. ist nichts mit festem Termin offen.</div>') + '</div></div></details>';
 
     var klaeren = S.posten.filter(function (p) { return p.status === 'pruefen'; });
     if (klaeren.length) {
@@ -308,18 +312,18 @@
 
   function viewWochenbudgets() {
     var w = L.wochenStand(S, todayD());
-    var title = 'Wochenbudgets · ' + eur(w.rest) + ' übrig von ' + eur(w.total);
+    var title = 'Wochenbudgets · ' + (w.rest < 0 ? eur(-w.rest) + ' über Budget' : eur(w.rest) + ' von ' + eur(w.total) + ' übrig');
     var h = foldStart('money-weekly', title, true);
     h += '<p class="note">Woche vom ' + esc(fmtD(w.start)) + ' bis ' + esc(fmtD(w.end)) + ' · Trag Einkäufe ein, sie werden vom jeweiligen Budget abgezogen. Jeden Montag beginnt die Woche neu.</p>';
     if (!w.list.length) h += '<div class="card"><div class="empty">Noch kein Wochenbudget angelegt.</div></div>';
     h += '<div class="weekly-budget-grid">';
     w.list.forEach(function (x) {
-      var pct = x.b.betrag > 0 ? Math.min(100, Math.round(x.spent / Number(x.b.betrag) * 100)) : 100;
+      var pct = Number(x.b.betrag) > 0 ? Math.min(100, Math.round(x.spent / Number(x.b.betrag) * 100)) : (x.spent > 0 ? 100 : 0);
       var over = x.rest < 0;
       h += '<div class="card weekly-budget-card" role="button" tabindex="0" data-action="wbudget-detail" data-id="' + esc(x.b.id) + '">' +
         '<div class="s">' + esc(x.b.name) + '</div>' +
-        '<strong class="' + (over ? 'money-negative' : 'money-positive') + '">' + eur(x.rest) + '</strong>' +
-        '<div class="s">von ' + eur(Number(x.b.betrag)) + ' übrig</div>' +
+        '<strong class="' + (over ? 'money-negative' : 'money-positive') + '">' + eur(Math.abs(x.rest)) + '</strong>' +
+        '<div class="s">' + (over ? 'über Budget von ' : 'übrig von ') + eur(Number(x.b.betrag)) + '</div>' +
         '<div class="wbar"><span class="' + (over ? 'over' : '') + '" style="width:' + pct + '%"></span></div></div>';
     });
     h += '</div>';
@@ -337,7 +341,7 @@
     h += '<div class="card"><b>Wiederkehrende Zahlungsempfänger · ' + candidates.length + '</b>';
     candidates.forEach(function (g) { h += '<div class="row"><div class="main"><div class="t">' + esc(g.name) + '</div><div class="s">' + g.count + ' Abbuchungen in ' + g.monthCount + ' Monaten · gesamt ' + eur(g.sum) + '</div></div></div>'; });
     h += '</div><div class="card"><b>Letzte Bankumsätze</b>';
-    rows.slice(0, 60).forEach(function (x) { h += '<div class="row"><div class="main"><div class="t">' + esc(x.gegenpartei || x.verwendungszweck || 'Buchung') + '</div><div class="s">' + esc(x.buchungsdatum) + (x.buchungsstatus === 'vorgemerkt' ? ' · vorgemerkt' : '') + '</div></div><div class="amt">' + eur(Number(x.betrag)) + '</div></div>'; });
+    rows.slice(0, 60).forEach(function (x) { h += '<div class="row"><div class="main"><div class="t">' + esc(x.gegenpartei || x.verwendungszweck || 'Buchung') + '</div><div class="s">' + esc(x.buchungsdatum ? L.parseISO(x.buchungsdatum).toLocaleDateString('de-DE') : '') + (x.buchungsstatus === 'vorgemerkt' ? ' · vorgemerkt' : '') + '</div></div><div class="amt">' + eur(Number(x.betrag)) + '</div></div>'; });
     return h + '</div></div></details>';
   }
 
@@ -348,7 +352,7 @@
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
     h += viewWochenbudgets();
     h += viewBankumsaetze();
-    h += foldStart('money-budget', 'Restbudget bis zum Gehalt', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
+    h += foldStart('money-budget', 'Restbudget bis zum 25.', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
     h += foldStart('money-month', 'Monatsübersicht', true) + '<div class="card"><table><tr><td>Einnahmen</td><td>' + eur(m.einnahmen) + '</td></tr>' +
@@ -413,26 +417,32 @@
   function closeModal() { $modal.innerHTML = ''; }
 
   function modalAbgleich() {
-    var t = todayD(), cs = L.periodStart(t);
-    var items = L.itemsForPeriod(S, cs, t).filter(function (i) { return !i.paid && i.p.zahlung === 'konto'; });
+    var t = todayD();
+    var items = L.calcLage(S, t, DISPO).offenListe;
     var past = items.filter(function (i) { return i.date && i.date <= t; });
     var undated = items.filter(function (i) { return !i.date; });
     var rows = past.map(function (i) { return abRow(i, true); }).join('') + undated.map(function (i) { return abRow(i, false); }).join('');
-    var last = S.staende[0];
     openModal('<h1>Kontostand aktualisieren</h1><form data-form="abgleich">' +
       '<label for="ab-konto">Welches Konto?</label><select id="ab-konto"><option value="sascha">Saschas Konto</option><option value="luna">Lunas Konto</option></select>' +
       '<label for="ab-betrag">Aktueller Kontostand in Euro</label><input id="ab-betrag" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 1840,50" required>' +
-      '<label class="inline"><input type="checkbox" id="ab-minus"> Das Konto ist im Minus (Dispo)</label>' +
+      '<label class="inline"><input type="checkbox" id="ab-minus"' + (lastNeg('sascha') ? ' checked' : '') + '> Das Konto ist im Minus (Dispo)</label>' +
       '<div id="ab-posten"><h2>Was ist seit dem letzten Stand abgebucht?</h2><p class="note">Ein Haken bedeutet: Der Betrag ist schon vom Konto weg und steckt im Kontostand. Ohne Haken bleibt die Zahlung offen und wird noch abgezogen.</p>' +
       '<div class="card">' + (rows || '<div class="empty">Nichts zu bestätigen.</div>') + '</div></div>' +
       '<div class="err" id="ab-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
     var kSel = document.getElementById('ab-konto');
-    if (kSel && kSel.addEventListener) kSel.addEventListener('change', function (e) { document.getElementById('ab-posten').style.display = e.target.value === 'luna' ? 'none' : ''; });
+    if (kSel && kSel.addEventListener) kSel.addEventListener('change', function (e) {
+      document.getElementById('ab-posten').style.display = e.target.value === 'luna' ? 'none' : '';
+      document.getElementById('ab-minus').checked = lastNeg(e.target.value);
+    });
     setTimeout(function () { var el = document.getElementById('ab-betrag'); if (el) el.focus(); }, 50);
   }
+  function lastNeg(konto) {
+    var st = S.staende.find(function (x) { return (x.konto || 'sascha') === konto; });
+    return !!st && Number(st.betrag) < 0;
+  }
   function abRow(i, checked) {
-    return '<label class="row" style="margin:0;color:var(--text);font-size:16px"><input class="chk" type="checkbox" name="pay" value="' + esc(i.p.id) + '"' + (checked ? ' checked' : '') + '>' +
-      '<span class="main"><span class="t" style="display:block">' + esc(i.p.name) + '</span><span class="s" style="display:block">' + (i.date ? esc(fmtD(i.date)) : 'Termin offen') + '</span></span><span class="amt">' + eur(i.betrag) + '</span></label>';
+    return '<label class="row" style="margin:0;color:var(--text);font-size:16px"><input class="chk" type="checkbox" name="pay" value="' + esc(i.p.id + '|' + i.periode) + '"' + (checked ? ' checked' : '') + '>' +
+      '<span class="main"><span class="t" style="display:block">' + esc(i.p.name) + '</span><span class="s" style="display:block">' + (i.date ? esc(fmtD(i.date)) : 'Termin offen') + (i.periode !== L.iso(L.periodStart(todayD())) ? ' · Vormonat' : '') + '</span></span><span class="amt">' + eur(i.betrag) + '</span></label>';
   }
   async function saveAbgleich(form) {
     var err = form.querySelector('#ab-err');
@@ -441,15 +451,16 @@
     if (!isFinite(n)) { err.textContent = 'Bitte gib den Kontostand als Zahl ein.'; return; }
     if (form.querySelector('#ab-minus').checked) n = -Math.abs(n);
     var ts = new Date().toISOString();
-    var t = todayD(), cs = L.periodStart(t);
+    var t = todayD();
     var konto = form.querySelector('#ab-konto').value;
     var r = await sb.from('kontostaende').insert({ betrag: n, erfasst_am: ts, erfasst_von: S.user.email, konto: konto });
     if (r.error) throw r.error;
     var ids = konto === 'luna' ? [] : Array.prototype.map.call(form.querySelectorAll('input[name=pay]:checked'), function (x) { return x.value; });
     if (ids.length) {
-      var rows = ids.map(function (id) {
-        var p = S.posten.find(function (x) { return x.id === id; });
-        return { posten_id: id, finanzmonat: L.iso(cs), betrag: L.itemsForPeriod(S, cs, t).find(function (i) { return i.p.id === id; }).betrag, bezahlt_am: L.iso(t), erfasst_am: ts };
+      var rows = ids.map(function (v) {
+        var id = v.split('|')[0], fm = v.split('|')[1];
+        var it = L.itemsForPeriod(S, L.parseISO(fm), t).find(function (i) { return i.p.id === id; });
+        return { posten_id: id, finanzmonat: fm, betrag: it ? it.betrag : Number((S.posten.find(function (x) { return x.id === id; }) || {}).betrag) || 0, bezahlt_am: L.iso(t), erfasst_am: ts };
       });
       var r2 = await sb.from('posten_zahlungen').upsert(rows, { onConflict: 'posten_id,finanzmonat' });
       if (r2.error) throw r2.error;
@@ -515,11 +526,11 @@
   function modalWausgabe(budgetId) {
     var w = L.wochenStand(S, todayD());
     if (!w.list.length) { toast('Lege zuerst ein Budget an.'); return; }
-    var opts = w.list.map(function (x) { return '<option value="' + esc(x.b.id) + '"' + (x.b.id === budgetId ? ' selected' : '') + '>' + esc(x.b.name) + ' · ' + eur(x.rest) + ' übrig</option>'; }).join('');
+    var opts = w.list.map(function (x) { return '<option value="' + esc(x.b.id) + '"' + (x.b.id === budgetId ? ' selected' : '') + '>' + esc(x.b.name) + ' · ' + (x.rest < 0 ? eur(-x.rest) + ' drüber' : eur(x.rest) + ' übrig') + '</option>'; }).join('');
     openModal('<h1>Ausgabe erfassen</h1><form data-form="wausgabe">' +
       '<label for="wa-b">Budget</label><select id="wa-b">' + opts + '</select>' +
       '<label for="wa-s">Betrag in Euro</label><input id="wa-s" inputmode="decimal" autocomplete="off" placeholder="zum Beispiel 23,45" required>' +
-      '<label for="wa-d">Datum</label><input id="wa-d" type="date" value="' + L.iso(todayD()) + '" required>' +
+      '<label for="wa-d">Datum (diese Woche)</label><input id="wa-d" type="date" value="' + L.iso(todayD()) + '" min="' + L.iso(w.start) + '" max="' + L.iso(w.end) + '" required>' +
       '<label for="wa-p">Bezahlt von</label><select id="wa-p"><option value="sascha">Sascha (Konto/Karte)</option><option value="luna">Luna (Konto/Karte)</option><option value="bar">bar</option></select>' +
       '<label for="wa-n">Notiz (optional)</label><input id="wa-n" placeholder="zum Beispiel Rewe">' +
       '<div class="err" id="wa-err"></div><div class="actions"><button type="button" data-action="close-modal">Abbrechen</button><button class="primary" type="submit">Speichern</button></div></form>');
@@ -530,6 +541,8 @@
     var b = L.parseBetrag(form.querySelector('#wa-s').value);
     var d = form.querySelector('#wa-d').value;
     if (!isFinite(b) || b <= 0 || !d) { err.textContent = 'Bitte gib einen Betrag größer als null und ein Datum ein.'; return; }
+    var w = L.wochenStand(S, todayD());
+    if (d < L.iso(w.start) || d > L.iso(w.end)) { err.textContent = 'Das Datum muss in der laufenden Woche liegen (' + fmtD(w.start) + ' bis ' + fmtD(w.end) + ').'; return; }
     var r = await sb.from('wochenausgaben').insert({ budget_id: form.querySelector('#wa-b').value, betrag: b, datum: d, notiz: form.querySelector('#wa-n').value.trim() || null, bezahlt_von: form.querySelector('#wa-p').value, erfasst_von: S.user.email });
     if (r.error) throw r.error;
     closeModal(); await loadAll(); render(); toast('Ausgabe erfasst');
@@ -544,7 +557,7 @@
         '<button type="button" class="mini-del" data-action="wausgabe-delete" data-id="' + esc(a.id) + '" aria-label="Ausgabe löschen">×</button></div>';
     }).join('');
     openModal('<h1>' + esc(x.b.name) + '</h1>' +
-      '<p class="note">Diese Woche ' + eur(x.spent) + ' ausgegeben, ' + eur(x.rest) + ' übrig von ' + eur(Number(x.b.betrag)) + '.</p>' +
+      '<p class="note">Diese Woche ' + eur(x.spent) + ' ausgegeben, ' + (x.rest < 0 ? eur(-x.rest) + ' über dem Budget von ' : eur(x.rest) + ' übrig von ') + eur(Number(x.b.betrag)) + '.</p>' +
       '<div class="card">' + (rows || '<div class="empty">Diese Woche noch nichts erfasst.</div>') + '</div>' +
       '<div class="actions"><button type="button" data-action="close-modal">Schließen</button><button class="primary" type="button" data-action="wausgabe-neu" data-id="' + esc(x.b.id) + '">Ausgabe erfassen</button></div>' +
       '<div style="height:10px"></div><button type="button" data-action="wbudget-edit" data-id="' + esc(x.b.id) + '">Budget bearbeiten</button>');
@@ -621,10 +634,18 @@
     if (!a) return;
     var r = await sb.from('aufgaben').update({ erledigt: checked, erledigt_am: checked ? new Date().toISOString() : null }).eq('id', id);
     if (r.error) throw r.error;
+    var same = function (x) { return x.id !== a.id && !x.erledigt && x.titel === a.titel && x.wiederholung === a.wiederholung; };
     if (checked && a.wiederholung) {
-      var next = L.nextRecurrence(a.faellig, a.wiederholung, todayD());
-      var r2 = await sb.from('aufgaben').insert({ titel: a.titel, zustaendig: a.zustaendig, faellig: L.iso(next), wiederholung: a.wiederholung });
-      if (r2.error) throw r2.error;
+      var next = L.iso(L.nextRecurrence(a.faellig, a.wiederholung, todayD()));
+      if (!S.aufgaben.some(function (x) { return same(x) && x.faellig === next; })) {
+        var r2 = await sb.from('aufgaben').insert({ titel: a.titel, zustaendig: a.zustaendig, faellig: next, wiederholung: a.wiederholung });
+        if (r2.error) throw r2.error;
+      }
+    } else if (!checked && a.wiederholung && a.erledigt_am) {
+      // Haken zurückgenommen: die dabei angelegte Folgeaufgabe wieder entfernen.
+      var seit = new Date(a.erledigt_am).getTime() - 5000;
+      var folge = S.aufgaben.filter(function (x) { return same(x) && x.erstellt_am && new Date(x.erstellt_am).getTime() >= seit; }).map(function (x) { return x.id; });
+      if (folge.length) { var r3 = await sb.from('aufgaben').delete().in('id', folge); if (r3.error) throw r3.error; }
     }
     await loadAll(); render();
   }
@@ -632,10 +653,11 @@
     var r = await Promise.all([
       sb.from('einnahmen').select('*'), sb.from('posten').select('*'), sb.from('posten_zahlungen').select('*'),
       sb.from('kontostaende').select('*').order('erfasst_am', { ascending: false }), sb.from('aufgaben').select('*'),
-      sb.from('wochenbudgets').select('*'), sb.from('wochenausgaben').select('*')
+      sb.from('wochenbudgets').select('*'), sb.from('wochenausgaben').select('*'),
+      fetchAll(function () { return sb.from('bankumsaetze').select('*').order('id'); })
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data, wochenbudgets: r[5].data, wochenausgaben: r[6].data };
+    var data = { exportiert_am: new Date().toISOString(), einnahmen: r[0].data, posten: r[1].data, posten_zahlungen: r[2].data, kontostaende: r[3].data, aufgaben: r[4].data, wochenbudgets: r[5].data, wochenausgaben: r[6].data, bankumsaetze: r[7].data };
     var name = 'lebenscockpit-backup-' + L.iso(todayD()) + '.json';
     var file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -658,7 +680,7 @@
   }, true);
 
   document.addEventListener('click', function (e) {
-    if (e.target === $modal) { closeModal(); return; }
+    if (e.target === $modal) { if (!$modal.querySelector('form')) closeModal(); return; }
     var el = e.target.closest('[data-action]');
     if (!el) return;
     var a = el.dataset.action, id = el.dataset.id;
@@ -693,7 +715,7 @@
       run(async function () { var r = await sb.from('posten').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });
     } else if (a === 'posten-end') {
       if (!confirm('Diesen Posten ab heute beenden?')) return;
-      run(async function () { var r = await sb.from('posten').update({ gueltig_bis: L.iso(todayD()) }).eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Beendet'); });
+      run(async function () { var r = await sb.from('posten').update({ gueltig_bis: L.iso(new Date(todayD().getFullYear(), todayD().getMonth(), todayD().getDate() - 1)) }).eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Beendet'); });
     } else if (a === 'aufgabe-delete') {
       if (!confirm('Diese Aufgabe wirklich löschen?')) return;
       run(async function () { var r = await sb.from('aufgaben').delete().eq('id', id); if (r.error) throw r.error; closeModal(); await loadAll(); render(); toast('Gelöscht'); });

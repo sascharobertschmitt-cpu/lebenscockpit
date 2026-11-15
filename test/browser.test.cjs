@@ -59,6 +59,7 @@ async function setup(page, storageMode = 'normal') {
           },
           order(key, opts) { rows.sort((a,b) => String(a[key] || '').localeCompare(String(b[key] || '')) * (opts.ascending ? 1 : -1)); return q; },
           limit(n) { rows = rows.slice(0,n); return q; },
+          range(a, b) { rows = rows.slice(a, b + 1); return q; },
           then(resolve) { return resolve({ data: rows, error: null }); }
         };
         return q;
