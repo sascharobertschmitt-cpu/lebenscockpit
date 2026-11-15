@@ -142,6 +142,15 @@
     return { sum: round2(sum), list: list };
   }
 
+  // Wochenausgaben, die erst nach dem letzten erfassten Kontostand eingetragen wurden, stecken noch nicht im Stand.
+  function seitStand(ausgaben, quelle, standTs) {
+    let sum = 0;
+    for (const x of ausgaben || []) {
+      if ((x.bezahlt_von || 'sascha') === quelle && new Date(x.erfasst_am).getTime() > standTs) sum += num(x.betrag);
+    }
+    return round2(sum);
+  }
+
   // ---------- Die Lage: Wie viel ist bis zum nächsten Gehalt frei? ----------
   function calcLage(state, today, dispo) {
     dispo = Number(dispo) || 0;
@@ -150,7 +159,7 @@
     const stand = alle.find((x) => (x.konto || 'sascha') === 'sascha') || null;
     const luna = alle.find((x) => x.konto === 'luna') || null;
     const next = nextIncome(state, today);
-    const res = { stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
+    const res = { wochenSascha: 0, wochenLuna: 0, stand: stand, next: next, days: null, offen: 0, offenListe: [], nachStand: 0, verfuegbar: null, tagesbudget: null, luecke: null, barOffen: 0, dispo: dispo, spielraum: null, luna: luna, gesamt: null };
     if (!next) return res;
     res.days = Math.max(1, daysBetween(today, next.date));
 
@@ -166,6 +175,7 @@
       }
     }
     res.offen = round2(res.offen);
+    res.wochenSascha = 0; res.wochenLuna = 0;
 
     if (stand) {
       const standTs = new Date(stand.erfasst_am).getTime();
@@ -176,9 +186,11 @@
         }
       }
       res.nachStand = round2(res.nachStand);
+      res.wochenSascha = seitStand(state.wausgaben, 'sascha', standTs);
+      if (luna) res.wochenLuna = seitStand(state.wausgaben, 'luna', new Date(luna.erfasst_am).getTime());
       res.spielraum = round2(num(stand.betrag) + dispo);
-      res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand);
-      if (luna) res.gesamt = round2(res.verfuegbar + num(luna.betrag));
+      res.verfuegbar = round2(res.spielraum - res.offen - res.nachStand - res.wochenSascha);
+      if (luna) res.gesamt = round2(res.verfuegbar + num(luna.betrag) - res.wochenLuna);
       if (res.verfuegbar < 0) res.luecke = round2(-res.verfuegbar);
       else res.tagesbudget = round2(res.verfuegbar / res.days);
     }

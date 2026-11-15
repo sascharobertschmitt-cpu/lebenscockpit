@@ -24,3 +24,6 @@ create policy "nur mitglieder" on public.wochenausgaben for all using (private.i
 revoke all on public.wochenbudgets, public.wochenausgaben from anon;
 insert into public.wochenbudgets (name, betrag, sortierung) values
  ('Lebensmittel & Getränke', 80, 1), ('Katzenfutter', 10, 2), ('Sprit', 30, 3);
+
+-- Zahlungsquelle der Ausgabe: Saschas Konto, Lunas Konto oder bar.
+alter table public.wochenausgaben add column bezahlt_von text not null default 'sascha' check (bezahlt_von in ('sascha','luna','bar'));

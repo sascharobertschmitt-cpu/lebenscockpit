@@ -196,3 +196,21 @@ console.log('Alle Tests bestanden');
  assert.equal(w.list.length,2,'inaktive Budgets ausgeblendet');
  close(w.list[0].rest,49.5); close(w.list[1].rest,-10); close(w.total,110); close(w.rest,39.5);
 }
+
+// Einkäufe nach dem Kontostand mindern den jeweiligen Spielraum; bar und ältere Einkäufe nicht.
+{
+ const s5 = JSON.parse(JSON.stringify(s2));
+ s5.staende.push({ konto: 'luna', betrag: 300, erfasst_am: '2026-11-13T17:00:00Z' });
+ const base = L.calcLage(s5, today);
+ s5.wausgaben = [
+  { betrag: 20, bezahlt_von: 'sascha', erfasst_am: '2026-11-14T10:00:00Z' },
+  { betrag: 15, bezahlt_von: 'luna', erfasst_am: '2026-11-14T11:00:00Z' },
+  { betrag: 99, bezahlt_von: 'bar', erfasst_am: '2026-11-14T12:00:00Z' },
+  { betrag: 77, bezahlt_von: 'sascha', erfasst_am: '2026-11-13T09:00:00Z' },
+  { betrag: 5, erfasst_am: '2026-11-14T13:00:00Z' }
+ ];
+ const l = L.calcLage(s5, today);
+ close(l.wochenSascha, 25, 'Sascha inkl. Standardquelle'); close(l.wochenLuna, 15, 'Luna');
+ close(l.verfuegbar, base.verfuegbar - 25, 'Spielraum Sascha');
+ close(l.gesamt, base.gesamt - 25 - 15, 'gemeinsam');
+}
