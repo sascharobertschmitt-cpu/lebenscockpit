@@ -29,7 +29,7 @@ async function setup(page, storageMode = 'normal') {
     if (storageMode === 'blocked') Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage unavailable'); } });
     if (storageMode === 'corrupt') localStorage.setItem('cockpit-folds', '{bad json');
     const db = {
-      posten, einnahmen, posten_zahlungen: [],
+      posten: [...posten, { id: 'plan-test', name: 'Test-Ratenplan', rhythmus: 'monatlich', tag_im_monat: 29, betrag: 10, zahlung: 'konto', raten_gesamt: 4, raten_ab_nummer: 2, raten_ab_datum: '2026-11-29', raten_schlussbetrag: 9.5 }], einnahmen, posten_zahlungen: [],
       kontostaende: [
         ...Array.from({ length: 35 }, (_, i) => ({ betrag: 500 + i, konto: 'sascha', erfasst_am: new Date(2026, 10, 13, 17, 0, 35-i).toISOString() })),
         { betrag: 300, konto: 'luna', erfasst_am: '2026-10-01T12:00:00Z' }
@@ -84,7 +84,10 @@ async function check(browserType, width) {
     await page.locator('[data-fold="today-finances"] summary').click();
     await page.screenshot({ path: path.join(output, `${browserType.name()}-${width}-dashboard.png`), fullPage: true });
     await page.locator('[data-action="tab"][data-tab="geld"]').click();
-    assert.equal(await page.locator('details').count(), 5);
+    assert.equal(await page.locator('details').count(), 6);
+    await page.locator('[data-fold="plan-plan-test"] summary').click();
+    assert.equal(await page.locator('[data-fold="plan-plan-test"] .row').count(), 3);
+    assert.match(await page.locator('[data-fold="plan-plan-test"]').textContent(), /9,50/);
     await page.locator('[data-fold="money-forecast"] summary').click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Money view fits viewport');
     await page.screenshot({ path: path.join(output, `${browserType.name()}-${width}-money.png`), fullPage: true });

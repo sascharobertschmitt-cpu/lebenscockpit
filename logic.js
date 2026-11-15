@@ -33,6 +33,18 @@
     return new Date(start.getFullYear(), start.getMonth() + n, 25);
   }
 
+  function installmentRows(state, p) {
+    if (!p.raten_ab_datum || !Number.isInteger(p.raten_gesamt) || !Number.isInteger(p.raten_ab_nummer) || p.raten_gesamt > 600 || p.raten_ab_nummer < 1 || p.raten_ab_nummer > p.raten_gesamt) return [];
+    const first = parseISO(p.raten_ab_datum);
+    const rows = [];
+    for (let n = p.raten_ab_nummer; n <= p.raten_gesamt; n++) {
+      const date = dateIn(first.getFullYear(), first.getMonth() + n - p.raten_ab_nummer, first.getDate());
+      const pay = state.zahlungen.find(z => z.posten_id === p.id && z.finanzmonat === iso(periodStart(date)));
+      rows.push({ number: n, date, paid: !!pay, betrag: pay ? num(pay.betrag) : n === p.raten_gesamt ? num(p.raten_schlussbetrag) : num(p.betrag) });
+    }
+    return rows;
+  }
+
   function gueltig(p, d) {
     if (p.gueltig_ab && d < parseISO(p.gueltig_ab)) return false;
     if (p.gueltig_bis && d > parseISO(p.gueltig_bis)) return false;
@@ -42,6 +54,11 @@
   // undefined = gehört nicht in diesen Finanzmonat, null = gehört hinein, Termin unbekannt, Date = Termin
   function occurrence(state, p, start, today) {
     const end = addPeriods(start, 1);
+    const rates = installmentRows(state, p);
+    if (rates.length && end > rates[0].date) {
+      const rate = rates.find(r => r.date >= start && r.date < end);
+      return rate && gueltig(p, rate.date) ? rate.date : undefined;
+    }
     if (p.rhythmus === 'einmalig') {
       if (p.faellig_am) {
         const d = parseISO(p.faellig_am);
@@ -74,7 +91,8 @@
       const d = occurrence(state, p, start, today);
       if (d === undefined) continue;
       const pay = state.zahlungen.find((z) => z.posten_id === p.id && z.finanzmonat === iso(start));
-      out.push({ p: p, date: d, paid: !!pay, pay: pay || null, betrag: num(pay ? pay.betrag : p.betrag) });
+      const rate = installmentRows(state, p).find(r => d && iso(r.date) === iso(d));
+      out.push({ p: p, date: d, paid: !!pay, pay: pay || null, betrag: num(pay ? pay.betrag : rate ? rate.betrag : p.betrag) });
     }
     out.sort((a, b) => {
       if (a.date && b.date) return a.date - b.date || a.p.name.localeCompare(b.p.name);
@@ -204,7 +222,7 @@
   }
 
   const api = {
-    iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
+    installmentRows, iso, parseISO, daysBetween, parseBetrag, periodStart, addPeriods, occurrence, itemsForPeriod,
     nextIncome, incomeInPeriod, calcLage, monatSummary, vorschau, nextRecurrence, round2
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

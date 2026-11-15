@@ -264,6 +264,26 @@
       '</div><div class="s">' + esc(sub) + '</div></div><div class="amt">' + eur(it.betrag) + '</div></div>';
   }
 
+  function viewRatenplaene() {
+    var plans = S.posten.filter(function (p) { return L.installmentRows(S, p).length; });
+    if (!plans.length) return '';
+    var h = '<h2>Ratenpläne</h2>';
+    plans.forEach(function (p) {
+      var rows = L.installmentRows(S, p);
+      var open = rows.filter(function (r) { return !r.paid; });
+      var remaining = L.round2(open.reduce(function (sum, r) { return sum + r.betrag; }, 0));
+      var next = open[0];
+      h += foldStart('plan-' + p.id, esc(p.name) + ' · ' + eur(remaining) + ' offen') +
+        '<p class="note">' + (next ? 'Nächste offene Rate ' + next.number + ' von ' + p.raten_gesamt + ': ' + eur(next.betrag) + ' am ' + esc(next.date.toLocaleDateString('de-DE')) : 'Alle erfassten Raten bezahlt.') + '</p>' +
+        '<p class="note">' + open.length + ' Raten offen. Bereits vor der Übernahme gezahlte Raten sind nicht einzeln aufgeführt. Abhaken erfolgt in den Monatszahlungen.</p><div class="card">';
+      rows.forEach(function (r) {
+        h += '<div class="row' + (r.paid ? ' paid' : '') + '"><div class="main"><div class="t">Rate ' + r.number + ' von ' + p.raten_gesamt + '</div><div class="s">' + esc(r.date.toLocaleDateString('de-DE')) + ' · ' + (r.paid ? 'Bezahlt' : r.date < todayD() ? 'Überfällig / Zahlung prüfen' : 'Offen') + '</div></div><div class="amt">' + eur(r.betrag) + '</div></div>';
+      });
+      h += '</div></div></details>';
+    });
+    return h;
+  }
+
   function viewGeld() {
     var t = todayD();
     var cs = L.periodStart(t);
@@ -285,6 +305,7 @@
     h += foldStart('money-open', 'Offen (' + offen.length + ')', true) + '<div class="card">' + (offen.length ? offen.map(itemRow).join('') : '<div class="empty">Alles bezahlt.</div>') + '</div></div></details>';
     h += foldStart('money-paid', 'Bezahlt (' + bezahlt.length + ')', false) + '<div class="card">' + (bezahlt.length ? bezahlt.map(itemRow).join('') : '<div class="empty">Noch nichts abgehakt.</div>') + '</div></div></details>';
 
+    h += viewRatenplaene();
     var v = L.vorschau(S, t, 6);
     h += foldStart('money-forecast', 'Vorschau der nächsten Monate') + '<div class="card"><table><tr><th>Bis</th><th>Einnahmen</th><th>Feste Zahlungen</th><th>Rest</th></tr>' +
       v.map(function (x, i) {
@@ -368,7 +389,7 @@
     if (ids.length) {
       var rows = ids.map(function (id) {
         var p = S.posten.find(function (x) { return x.id === id; });
-        return { posten_id: id, finanzmonat: L.iso(cs), betrag: Number(p.betrag), bezahlt_am: L.iso(t), erfasst_am: ts };
+        return { posten_id: id, finanzmonat: L.iso(cs), betrag: L.itemsForPeriod(S, cs, t).find(function (i) { return i.p.id === id; }).betrag, bezahlt_am: L.iso(t), erfasst_am: ts };
       });
       var r2 = await sb.from('posten_zahlungen').upsert(rows, { onConflict: 'posten_id,finanzmonat' });
       if (r2.error) throw r2.error;
@@ -463,7 +484,7 @@
     var p = S.posten.find(function (x) { return x.id === id; });
     if (!p) return;
     if (checked) {
-      var r = await sb.from('posten_zahlungen').upsert({ posten_id: id, finanzmonat: L.iso(cs), betrag: Number(p.betrag), bezahlt_am: L.iso(t) }, { onConflict: 'posten_id,finanzmonat' });
+      var r = await sb.from('posten_zahlungen').upsert({ posten_id: id, finanzmonat: L.iso(cs), betrag: L.itemsForPeriod(S, cs, t).find(function (i) { return i.p.id === id; }).betrag, bezahlt_am: L.iso(t) }, { onConflict: 'posten_id,finanzmonat' });
       if (r.error) throw r.error;
     } else {
       var r2 = await sb.from('posten_zahlungen').delete().eq('posten_id', id).eq('finanzmonat', L.iso(cs));
