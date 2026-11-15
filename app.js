@@ -11,7 +11,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
 
-  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], loaded: false, busy: false };
+  var S = { user: null, tab: 'heute', einnahmen: [], posten: [], zahlungen: [], staende: [], aufgaben: [], bankumsaetze: [], loaded: false, busy: false };
   var $app = document.getElementById('app');
   var $modal = document.getElementById('modal');
   var $toast = document.getElementById('toast');
@@ -63,10 +63,11 @@
       sb.from('posten_zahlungen').select('*'),
       sb.from('kontostaende').select('*').or('konto.eq.sascha,konto.is.null').order('erfasst_am', { ascending: false }).limit(1),
       sb.from('aufgaben').select('*').order('faellig', { ascending: true, nullsFirst: false }),
-      sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1)
+      sb.from('kontostaende').select('*').eq('konto', 'luna').order('erfasst_am', { ascending: false }).limit(1),
+      sb.from('bankumsaetze').select('id,konto,buchungsdatum,betrag,gegenpartei,verwendungszweck,buchungsstatus').order('buchungsdatum', { ascending: false }).limit(1000)
     ]);
     for (var i = 0; i < r.length; i++) if (r[i].error) throw r[i].error;
-    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data;
+    S.einnahmen = r[0].data; S.posten = r[1].data; S.zahlungen = r[2].data; S.staende = r[3].data.concat(r[5].data); S.aufgaben = r[4].data; S.bankumsaetze = r[6].data || [];
     S.loaded = true;
   }
   async function reload() {
@@ -102,7 +103,7 @@
   }
   async function logout() {
     try { await sb.auth.signOut(); } catch (e) { /* egal */ }
-    S.user = null; S.loaded = false; S.einnahmen = []; S.posten = []; S.zahlungen = []; S.staende = []; S.aufgaben = [];
+    S.user = null; S.loaded = false; S.einnahmen = []; S.posten = []; S.zahlungen = []; S.staende = []; S.aufgaben = []; S.bankumsaetze = [];
     closeModal();
     renderLogin();
   }
@@ -312,12 +313,34 @@
     return h;
   }
 
+  function viewBankumsaetze() {
+    var rows = S.bankumsaetze || [];
+    var booked = rows.filter(function (x) { return x.buchungsstatus !== 'vorgemerkt'; });
+    var grouped = {};
+    booked.filter(function (x) { return Number(x.betrag) < 0 && x.gegenpartei && x.gegenpartei.trim(); }).forEach(function (x) {
+      var name = x.gegenpartei.trim();
+      var key = name.toLocaleLowerCase('de-DE');
+      if (!grouped[key]) grouped[key] = { name: name, months: {}, count: 0, sum: 0 };
+      var g = grouped[key]; g.count++; g.sum += Math.abs(Number(x.betrag));
+      g.months[x.buchungsdatum.slice(0, 7)] = true;
+    });
+    var candidates = Object.keys(grouped).map(function (k) { return grouped[k]; }).filter(function (g) { return Object.keys(g.months).length >= 2; }).sort(function (a,b) { return Object.keys(b.months).length - Object.keys(a.months).length || b.count - a.count; });
+    var h = foldStart('money-bank', 'Bankumsätze & wiederkehrende Abbuchungen', false);
+    h += '<p class="note">' + rows.length + ' importierte Umsätze (' + booked.length + ' gebucht, ' + (rows.length-booked.length) + ' vorgemerkt). Wiederkehrend bedeutet hier: Abbuchungen beim selben Empfänger in mindestens zwei Kalendermonaten. Das sind Kandidaten, keine bestätigten Verträge.</p>';
+    h += '<div class="card"><b>Wiederkehrende Zahlungsempfänger · ' + candidates.length + '</b>';
+    candidates.forEach(function (g) { h += '<div class="row"><div class="main"><div class="t">' + esc(g.name) + '</div><div class="s">' + g.count + ' Abbuchungen in ' + Object.keys(g.months).length + ' Monaten · gesamt ' + eur(g.sum) + '</div></div></div>'; });
+    h += '</div><div class="card"><b>Letzte Bankumsätze</b>';
+    rows.slice(0, 60).forEach(function (x) { h += '<div class="row"><div class="main"><div class="t">' + esc(x.gegenpartei || x.verwendungszweck || 'Buchung') + '</div><div class="s">' + esc(x.buchungsdatum) + (x.buchungsstatus === 'vorgemerkt' ? ' · vorgemerkt' : '') + '</div></div><div class="amt">' + eur(Number(x.betrag)) + '</div></div>'; });
+    return h + '</div></div></details>';
+  }
+
   function viewGeld() {
     var t = todayD();
     var cs = L.periodStart(t);
     var m = L.monatSummary(S, cs, t);
     var h = head('Geld', 'Finanzmonat ' + fmtD(m.start) + ' bis ' + fmtD(m.end));
     h += viewWochenbudgets();
+    h += viewBankumsaetze();
     h += foldStart('money-budget', 'Restbudget bis zum Gehalt', true) + restbudget(L.calcLage(S, t, DISPO)) + '</div></details>';
 
     var einnTxt = m.einnahmenListe.map(function (x) { return esc(x.e.person) + ' ' + eur0(Number(x.e.betrag)); }).join(', ');
