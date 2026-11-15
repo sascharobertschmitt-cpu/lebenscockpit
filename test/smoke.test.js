@@ -85,7 +85,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   const app = () => elements.app.innerHTML;
 
   // Heute
-  assert.ok(/Gemeinsam noch verfügbar/.test(app()) && /Saschas Konto: Spielraum/.test(app()), 'Heute zeigt beide großen Geldbeträge');
+  assert.ok(/Saschas Kontostand/.test(app()) && /Lunas Kontostand/.test(app()) && /Gemeinsam bis Gehalt verfügbar inkl\. Dispo/.test(app()), 'Heute zeigt beide Kontostände und den gemeinsamen Spielraum');
   assert.ok(/dashboard-money-pair/.test(app()), 'Geldbeträge nebeneinander');
   assert.ok(/Zukünftige Aufgaben \(1\)/.test(app()) && /Termin vorbereiten/.test(app()), 'Zukünftige Aufgaben vollständig vorhanden');
   assert.ok(/Aufgaben ohne Termin \(1\)/.test(app()), 'Aufgaben ohne Termin separat');
