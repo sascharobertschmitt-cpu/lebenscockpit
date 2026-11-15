@@ -85,7 +85,7 @@ async function check(browserType, width) {
     await page.locator('[data-fold="today-finances"] summary').click();
     await page.screenshot({ path: path.join(output, `${browserType.name()}-${width}-dashboard.png`), fullPage: true });
     await page.locator('[data-action="tab"][data-tab="geld"]').click();
-    assert.equal(await page.locator('details').count(), 8, 'Money view includes weekly budgets and PayPal overview');
+    assert.equal(await page.locator('details').count(), 9, 'Money view includes weekly budgets, bank transactions and PayPal overview');
     await page.locator('[data-fold="plan-plan-test"] summary').click();
     assert.equal(await page.locator('[data-fold="plan-plan-test"] .row').count(), 3);
     assert.match(await page.locator('[data-fold="plan-plan-test"]').textContent(), /9,50/);
