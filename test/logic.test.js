@@ -165,3 +165,13 @@ console.log('Alle Tests bestanden');
  assert.equal(L.installmentRows(state,p).filter(r=>!r.paid).length,2);
  assert.equal(L.itemsForPeriod(state,D('2026-12-25'),today).length,1,'Older periods retain existing history');
 }
+
+// Variable monthly amounts and recorded payment precedence.
+{
+ const p={id:'variable',name:'Variable',rhythmus:'monatlich',tag_im_monat:4,betrag:10,raten_ab_nummer:1,raten_gesamt:3,raten_ab_datum:'2027-01-04',raten_schlussbetrag:9,raten_betraege:{'2027-02-04':10.25}};
+ const s={posten:[p],zahlungen:[]};
+ assert.deepStrictEqual(L.installmentRows(s,p).map(r=>r.betrag),[10,10.25,9]);
+ close(L.itemsForPeriod(s,D('2027-01-25'),today)[0].betrag,10.25);
+ s.zahlungen.push({posten_id:p.id,finanzmonat:'2027-01-25',betrag:10.20});
+ close(L.installmentRows(s,p)[1].betrag,10.20);
+}

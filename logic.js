@@ -40,7 +40,9 @@
     for (let n = p.raten_ab_nummer; n <= p.raten_gesamt; n++) {
       const date = dateIn(first.getFullYear(), first.getMonth() + n - p.raten_ab_nummer, first.getDate());
       const pay = state.zahlungen.find(z => z.posten_id === p.id && z.finanzmonat === iso(periodStart(date)));
-      rows.push({ number: n, date, paid: !!pay, betrag: pay ? num(pay.betrag) : n === p.raten_gesamt ? num(p.raten_schlussbetrag) : num(p.betrag) });
+      const override = p.raten_betraege && p.raten_betraege[iso(date)];
+      const planned = override != null && Number.isFinite(Number(override)) && Number(override) >= 0 ? Number(override) : n === p.raten_gesamt ? num(p.raten_schlussbetrag) : num(p.betrag);
+      rows.push({ number: n, date, paid: !!pay, betrag: pay ? num(pay.betrag) : planned });
     }
     return rows;
   }
