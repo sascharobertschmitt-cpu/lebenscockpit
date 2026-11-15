@@ -408,7 +408,7 @@
   }
 
   // ---------- Fenster ----------
-  function openModal(html) { $modal.innerHTML = '<div class="sheet" role="dialog" aria-modal="true">' + html + '</div>'; }
+  function openModal(html) { $modal.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><button type="button" class="modal-x" data-action="close-modal" aria-label="Schließen">×</button>' + html + '</div>'; }
   function closeModal() { $modal.innerHTML = ''; }
 
   function modalAbgleich() {

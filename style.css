@@ -174,3 +174,4 @@ nav button svg{flex:none}
 .wbar span.over{background:#ff9bab}
 .mini-del{flex:0 0 auto;width:40px;min-height:40px;padding:0;font-size:20px;line-height:1}
 @media(min-width:700px){.weekly-budget-grid{grid-template-columns:repeat(3,1fr)}}
+.modal-x{position:sticky;top:-8px;float:right;z-index:2;width:40px;min-height:40px;height:40px;padding:0;margin:-8px -4px 0 8px;border-radius:50%;font-size:24px;line-height:1;background:rgba(255,255,255,.08);border:1px solid var(--line)}
